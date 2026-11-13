@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+build/
+releases/
+tests-work/
+data/
+*.sqlite*
+*.log
+.env
+.env.*
+*.exe
+*.dll
+LocalProduct/assets/speech/model/
+LocalProduct/assets/speech/native/

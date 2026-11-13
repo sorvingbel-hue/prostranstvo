@@ -1,0 +1,47 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Learning task v1 draft; no runtime implementation implied",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "task_id", "subject", "skill_id", "grade_hint", "prompt", "source", "context", "processing"],
+  "properties": {
+    "schema_version": {"const": "1.0-draft"},
+    "task_id": {"type": "string", "pattern": "^[a-zA-Z0-9_-]{1,64}$"},
+    "subject": {"const": "math"},
+    "skill_id": {"enum": ["fraction.add.same_denominator", "fraction.add.unlike_denominators"]},
+    "grade_hint": {"type": "integer", "minimum": 1, "maximum": 6},
+    "standard_refs": {"type": "array", "maxItems": 8, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 80}},
+    "prompt": {
+      "type": "object", "additionalProperties": false, "required": ["en", "ru"],
+      "properties": {"en": {"type": "string", "minLength": 1, "maxLength": 12000}, "ru": {"type": "string", "minLength": 1, "maxLength": 12000}}
+    },
+    "source": {
+      "type": "object", "additionalProperties": false,
+      "required": ["kind", "label", "use_scope"],
+      "properties": {
+        "kind": {"enum": ["original_demo", "family_provided", "licensed_pack"]},
+        "label": {"type": "string", "minLength": 1, "maxLength": 200},
+        "use_scope": {"enum": ["original_example", "private_family_only", "license_reviewed"]},
+        "license_ref": {"type": "string", "minLength": 1, "maxLength": 300}
+      },
+      "allOf": [
+        {"if": {"properties": {"kind": {"const": "original_demo"}}}, "then": {"properties": {"use_scope": {"const": "original_example"}}}},
+        {"if": {"properties": {"kind": {"const": "family_provided"}}}, "then": {"properties": {"use_scope": {"const": "private_family_only"}}}},
+        {"if": {"properties": {"kind": {"const": "licensed_pack"}}}, "then": {"required": ["license_ref"], "properties": {"use_scope": {"const": "license_reviewed"}}}}
+      ]
+    },
+    "context": {
+      "type": "object", "additionalProperties": false,
+      "required": ["input_confirmed", "teacher_method_status", "teacher_method"],
+      "properties": {
+        "input_confirmed": {"type": "boolean"},
+        "teacher_method_status": {"enum": ["unknown", "family_provided", "demo_instruction"]},
+        "teacher_method": {"type": "string", "maxLength": 2000}
+      }
+    },
+    "processing": {
+      "type": "object", "additionalProperties": false, "required": ["storage", "external_processing"],
+      "properties": {"storage": {"const": "local"}, "external_processing": {"const": false}}
+    }
+  }
+}

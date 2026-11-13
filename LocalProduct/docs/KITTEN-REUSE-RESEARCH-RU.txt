@@ -1,0 +1,69 @@
+МУРЧИК · ИССЛЕДОВАНИЕ ГОТОВЫХ КОМПОНЕНТОВ · 2026-11-06
+
+РЕШЕНИЕ ДЛЯ ЭТОГО ОБНОВЛЕНИЯ
+Сохраняем работающего C#/GDI-котёнка и подключаем готовый Blockly13.4.0.
+Blockly даёт перетаскивание, соединение блоков, поля, масштабирование,
+отмену действий и русские подписи. Наш код описывает только события,
+фиксированные действия котика, сохранение и передачу в нынешний renderer.
+Это позволяет получить настоящий блочный редактор без смены движка.
+
+1. BLOCKLY — ИСПОЛЬЗУЕТСЯ В ПАКЕТЕ
+Текущий официальный проект — Raspberry Pi Foundation. Apache-2.0,
+включены LICENSE и контрольные суммы. Получен официальный npm-архив,
+проверен SHA-512 integrity. В пакет входят локальные JS, русские сообщения
+и media; подключений к CDN во время использования нет. Номер версии,
+URL источника и хеши: assets/blockly/asset-manifest.json.
+
+Редактор использует собственные блоки и преобразует соединения в маленький
+проверяемый JSON. Генераторы JavaScript/Python для детских сценариев не
+подключены. Позиции блоков могут восстанавливаться автоматически из правил;
+отдельные произвольные программы пользователя не исполняются.
+
+Первоисточники:
+https://github.com/RaspberryPiFoundation/blockly
+https://github.com/RaspberryPiFoundation/blockly/blob/main/LICENSE
+https://docs.blockly.com/guides/create-custom-blocks/overview/
+https://docs.blockly.com/guides/configure/serialization/
+https://registry.npmjs.org/blockly/13.4.0
+
+2. VPET — ИЗУЧЕНА АРХИТЕКТУРА, КОД И РИСУНКИ НЕ КОПИРОВАЛИСЬ
+Есть готовое встраиваемое WPF-ядро, модификации и разделение логики,
+контроллера и анимаций. Код — Apache-2.0. Проверенный Core ориентирован
+на современный .NET/WPF; наш текущий renderer — .NET Framework4.8/GDI.
+Полная замена увеличила бы объём переноса и повторных проверок.
+У штатных анимаций отдельные условия использования; оставляем свою графику.
+
+Первоисточники:
+https://github.com/LorisYounger/VPet
+https://github.com/LorisYounger/VPet/blob/main/LICENSE
+https://github.com/LorisYounger/VPet/blob/main/README_en.md
+https://github.com/LorisYounger/VPet/blob/main/VPet-Simulator.Core/VPet-Simulator.Core.csproj
+
+3. SHIMEJI-EE — ИЗУЧЕН ПРИНЦИП ДЕКЛАРАТИВНОГО ПОВЕДЕНИЯ
+Отдельные actions.xml и behaviors.xml описывают действия, кадры и переходы.
+Для Мурчика использован этот общий архитектурный подход: данные сценария
+отдельно от исполнения. Java-движок и чужие персонажи не переносились.
+У конкретного проверенного fork gil/shimeji-ee permissive BSD-style текст,
+дополнительное уведомление Kilkakon и исходное zlib-style уведомление;
+зависимости имеют собственные условия. Лицензию одного fork нельзя
+автоматически переносить на все проекты с похожим названием.
+
+Первоисточники:
+https://github.com/gil/shimeji-ee/blob/master/conf/actions.xml
+https://github.com/gil/shimeji-ee/blob/master/conf/behaviors.xml
+https://github.com/gil/shimeji-ee/blob/master/licence.txt
+https://github.com/gil/shimeji-ee/blob/master/originallicence.txt
+
+ПУТЬ РАЗВЁРТЫВАНИЯ
+В этом выпуске редактор открывается в существующем современном браузере,
+страница и API находятся только на127.0.0.1. Система принимает исключительно
+описания трюков. Сервер запускается явным действием и не ставится в автозапуск.
+WebView2 может позже поместить тот же редактор внутрь отдельного окна;
+сейчас это потребовало бы нового host/SDK и проверки Runtime на другом ПК.
+На текущем ПК Runtime найден, но это не подтверждает чистую установку.
+https://learn.microsoft.com/en-us/microsoft-edge/webview2/get-started/winforms
+https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution
+
+Это технический выбор для локальной beta; интерес и удобство ребёнку
+проверяются в реальном использовании. Наличие похожих проектов не
+подтверждает спрос или будущие продажи нашего приложения.

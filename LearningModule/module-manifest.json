@@ -1,0 +1,51 @@
+{
+  "module_id": "prostranstvo.learning",
+  "module_version": "0.1.0",
+  "contract_version": "1.0",
+  "stage": "local_prototype",
+  "runtime_available": true,
+  "host_required": false,
+  "active_host_connected": false,
+  "capabilities": [
+    {
+      "id": "assessment.exact_fraction",
+      "state": "verified",
+      "scope": "Bounded parser and exact value/form checks for two nonnegative proper fractions",
+      "evidence": "tests/test_fractions.py; tests/test_content.py; tests/test_service.py"
+    },
+    {
+      "id": "tutoring.hint_ladder",
+      "state": "implemented",
+      "scope": "Four original RU/EN hint levels; bounded models; no child learning-effectiveness claim"
+    },
+    {
+      "id": "storage.local_history",
+      "state": "verified",
+      "scope": "Owned SQLite workflow, persistent replay, transactional rollback and self-contained export recovery",
+      "evidence": "tests/test_service.py; tests/test_client_adapter.py"
+    },
+    {
+      "id": "ui.standalone",
+      "state": "verified",
+      "scope": "Real withdrawn Tk windows and local workflows on development PC; visible child acceptance pending",
+      "evidence": "tests/test_ui.py"
+    },
+    {
+      "id": "adapter.prostranstvo",
+      "state": "implemented",
+      "scope": "Explicit dialogue adapter and local stdio client; active kitten not connected"
+    },
+    {
+      "id": "homework.general",
+      "state": "planned",
+      "scope": "Arbitrary school text, OCR, speech and broad subject coverage"
+    }
+  ],
+  "limitations": [
+    "Limited fraction addition prototype",
+    "No external AI, school login or online database",
+    "No parent authentication within a shared Windows account",
+    "No proven teaching effectiveness or second clean-device acceptance",
+    "No Windows-control authority"
+  ]
+}

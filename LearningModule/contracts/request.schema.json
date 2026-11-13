@@ -1,0 +1,14 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Learning module request envelope 1.0",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "request_id", "operation", "params"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "request_id": {"type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$"},
+    "operation": {"enum": ["module.describe", "task.create", "session.start", "session.snapshot", "turn.submit", "session.stop", "history.list", "report.export"]},
+    "params": {"type": "object", "maxProperties": 4},
+    "expected_revision": {"type": "integer", "minimum": 0}
+  },
+  "allOf": [{"if": {"properties": {"operation": {"enum": ["turn.submit", "session.stop"]}}}, "then": {"required": ["expected_revision"]}}]
+}

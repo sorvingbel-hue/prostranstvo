@@ -1,0 +1,135 @@
+{
+  "schema": 1,
+  "engine": "vosk",
+  "version": "0.3.45",
+  "language": "ru",
+  "model": "vosk-model-small-ru-0.22",
+  "license": "Apache-2.0",
+  "runtime_network": false,
+  "dependency_licenses": {
+    "libgcc_s_seh-1.dll": "GPL-3.0-with-GCC-exception",
+    "libstdc++-6.dll": "GPL-3.0-with-GCC-exception",
+    "libwinpthread-1.dll": "MinGW-winpthreads-COPYING"
+  },
+  "sources": {
+    "wheel": {
+      "url": "https://files.pythonhosted.org/packages/c0/4c/deb0861f7da9696f8a255f1731bb73e9412cca29c4b3888a3fcb2a930a59/vosk-0.3.45-py3-none-win_amd64.whl",
+      "sha256": "6994ddc68556c7e5730c3b6f6bad13320e3519b13ce3ed2aa25a86724e7c10ac",
+      "published_sha256_verified": true
+    },
+    "model": {
+      "url": "https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip",
+      "sha256": "961d5ff98a17f4aa6de69864d0aa71fa5bac682301d2b5d17a3f24c5c99a46d4",
+      "published_sha256_verified": false,
+      "pinned_sha256_verified": true
+    },
+    "licenses": {
+      "Vosk-Apache-2.0.txt": {
+        "url": "https://raw.githubusercontent.com/alphacep/vosk-api/v0.3.45/COPYING",
+        "sha256": "bb618af833c817ab01c1564bd3ec75ba4b4f9cf30910a4a2168e30a674ee8cc6"
+      },
+      "GCC-GPL-3.0.txt": {
+        "url": "https://raw.githubusercontent.com/gcc-mirror/gcc/master/COPYING3",
+        "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+      },
+      "GCC-Runtime-Exception-3.1.txt": {
+        "url": "https://raw.githubusercontent.com/gcc-mirror/gcc/master/COPYING.RUNTIME",
+        "sha256": "9d6b43ce4d8de0c878bf16b54d8e7a10d9bd42b75178153e3af6a815bdc90f74"
+      },
+      "MinGW-winpthreads-COPYING.txt": {
+        "url": "https://raw.githubusercontent.com/mingw-w64/mingw-w64/master/mingw-w64-libraries/winpthreads/COPYING",
+        "sha256": "63263614cdd29f2f93cba85e992f041b31f9fc7b4033692f31269489a8a1b177"
+      }
+    }
+  },
+  "files": {
+    "licenses/GCC-GPL-3.0.txt": {
+      "size": 35147,
+      "sha256": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903"
+    },
+    "licenses/GCC-Runtime-Exception-3.1.txt": {
+      "size": 3324,
+      "sha256": "9d6b43ce4d8de0c878bf16b54d8e7a10d9bd42b75178153e3af6a815bdc90f74"
+    },
+    "licenses/MinGW-winpthreads-COPYING.txt": {
+      "size": 2883,
+      "sha256": "63263614cdd29f2f93cba85e992f041b31f9fc7b4033692f31269489a8a1b177"
+    },
+    "licenses/Vosk-Apache-2.0.txt": {
+      "size": 10173,
+      "sha256": "bb618af833c817ab01c1564bd3ec75ba4b4f9cf30910a4a2168e30a674ee8cc6"
+    },
+    "model/README": {
+      "size": 660,
+      "sha256": "b662517cacda14945e159538d6dd8faff23bd706e024c4fb338b6013c9939b9e"
+    },
+    "model/am/final.mdl": {
+      "size": 15862383,
+      "sha256": "36d67b53dc90d96ea48097f9e17e7c5937689ad76cb8bed25091317bbaf25919"
+    },
+    "model/conf/mfcc.conf": {
+      "size": 131,
+      "sha256": "1e2228006d01d805ad1c267fee9f79709ca87ac51bd82b0e3f5c69ba543f0fc4"
+    },
+    "model/conf/model.conf": {
+      "size": 289,
+      "sha256": "dd7178da0e99fdbe489816c1e9702c3daa28e02accacc2993e0becb7af33b80c"
+    },
+    "model/graph/Gr.fst": {
+      "size": 32288259,
+      "sha256": "189b4f67c69eb34b9d8b47b12f184665e5445667ca5264579b61c6b9eb2cef1e"
+    },
+    "model/graph/HCLr.fst": {
+      "size": 32993810,
+      "sha256": "0b096f4676f306aa3e60d2244ef1e24c5c699b8794acf3c3946b59bcc9dca831"
+    },
+    "model/graph/disambig_tid.int": {
+      "size": 25,
+      "sha256": "c3af3dbc5eb301c4b282480d785c04b1642a8db83210a12332e9790e50146fd2"
+    },
+    "model/graph/phones/word_boundary.int": {
+      "size": 2166,
+      "sha256": "23081404fe1cc7338c013a4beec133637147d60472c06ab64ff88ee3d028a7b5"
+    },
+    "model/ivector/final.dubm": {
+      "size": 168048,
+      "sha256": "7dffe22bd992d7274fba925632bded4756d82dfd9b962d3c703110251fdf35b8"
+    },
+    "model/ivector/final.ie": {
+      "size": 9927287,
+      "sha256": "94f2558d00fe199ac01409281352eb16707ec075baaf9cc0d7b53011583cfa0e"
+    },
+    "model/ivector/final.mat": {
+      "size": 44975,
+      "sha256": "956577d396b636fe359b4321f10df5ed6a76bdfdec366b4a2b7d3242e524f04f"
+    },
+    "model/ivector/global_cmvn.stats": {
+      "size": 1077,
+      "sha256": "c600cbf4acfbfac99d587040d48dc31129cd635b112ff15bfa2e9d3b0cece1f8"
+    },
+    "model/ivector/online_cmvn.conf": {
+      "size": 95,
+      "sha256": "a2f3571754b64297cb7efb2e7ca3df61995c5a45fcbb97188f90613552bb2dfe"
+    },
+    "model/ivector/splice.conf": {
+      "size": 35,
+      "sha256": "9f0c5f7c82d18eaf25d8bce470efa9f7741f88411fe428774bc0a9bb69a24756"
+    },
+    "native/libgcc_s_seh-1.dll": {
+      "size": 606425,
+      "sha256": "201bf8a54ebb490f93ea4beb20740a483bf67036b90b5720f32d0c746a72d1e9"
+    },
+    "native/libstdc++-6.dll": {
+      "size": 26619146,
+      "sha256": "a1d96a848a567d7657e152cfe92e2fd62da412968cc11ec8bdb04bf20ebc5747"
+    },
+    "native/libvosk.dll": {
+      "size": 26447872,
+      "sha256": "9331c2f6a32cf77141af27c9750e79532718f51bbc2e3cea3c60f14ca4251e4e"
+    },
+    "native/libwinpthread-1.dll": {
+      "size": 366907,
+      "sha256": "92caeb8a4ea281c674003462a233f3b445b685b0a6f93eb11254feda2dda9cde"
+    }
+  }
+}

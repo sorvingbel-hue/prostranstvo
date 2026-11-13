@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Мурчик · Мастерская трюков</title>
+  <link rel="stylesheet" href="/editor.css">
+  <script defer src="/blockly/blockly_compressed.js"></script>
+  <script defer src="/blockly/msg/ru.js"></script>
+  <script defer src="/editor.js"></script>
+</head>
+<body>
+  <header>
+    <div class="brand"><span aria-hidden="true" class="paw">✦</span><div><h1>Мастерская Мурчика</h1><p>Соединяй блоки — учи котика маленьким трюкам.</p></div></div>
+    <button id="close-editor" class="quiet">Закрыть редактор</button>
+  </header>
+  <main>
+    <section class="controls" aria-label="Управление трюками">
+      <label class="enable"><input id="enabled" type="checkbox"> Трюки включены</label>
+      <button id="save" class="primary" disabled>Сохранить</button>
+      <label class="preview-choice">Трюк для проверки <select id="preview-rule" aria-label="Сохранённый трюк для проверки"></select></label>
+      <button id="preview" disabled>Проверить на котике</button>
+      <button id="stop" class="stop">Стоп</button>
+    </section>
+    <section class="workspace-shell" aria-label="Конструктор">
+      <aside>
+        <h2>Попробуй готовый пример</h2>
+        <select id="template" aria-label="Готовый пример">
+          <option value="petted">Погладили → сердечко и мурчание</option>
+          <option value="greet">Приветствие → потянуться</option>
+          <option value="manual">Мой первый трюк → поморгать</option>
+        </select>
+        <button id="add-template">Добавить пример</button>
+        <p>Или перетащи блок «Когда…» из раздела «События» и присоедини к нему действия.</p>
+        <p>Сначала сохрани изменения. Затем выбери трюк и нажми «Проверить».</p>
+        <p class="limits">До 8 трюков, по 8 действий. Один трюк — не дольше 30 секунд.</p>
+        <p class="privacy">Всё остаётся на этом ПК. Блоки управляют только Мурчиком.</p>
+      </aside>
+      <div id="workspace" role="region" aria-label="Поле блоков Мурчика"></div>
+    </section>
+    <footer>
+      <div id="status" role="status" aria-live="polite">Подключаю локальную мастерскую…</div>
+      <div id="native-status">Проверяю настольного котика…</div>
+      <div id="dirty-status">Изменения ещё не сохранены.</div>
+      <p>Полный экран, перетаскивание котика и режим уроков могут приостановить трюк. Кнопка «Стоп» отменяет запуск.</p>
+    </footer>
+  </main>
+  <noscript>Для конструктора нужен JavaScript. Все его файлы входят в локальное приложение.</noscript>
+</body>
+</html>

@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0-draft",
+  "task_id": "demo_fraction_grade4_001",
+  "subject": "math",
+  "skill_id": "fraction.add.same_denominator",
+  "grade_hint": 4,
+  "standard_refs": ["CCSS.Math.Content.4.NF.B.3a"],
+  "prompt": {
+    "en": "Add 1/4 and 2/4. Write the answer in simplest form. Explain what the denominator tells you.",
+    "ru": "Сложи 1/4 и 2/4. Запиши ответ в сокращённом виде. Объясни, что показывает знаменатель."
+  },
+  "source": {"kind": "original_demo", "label": "Original synthetic format example, not a school assignment", "use_scope": "original_example"},
+  "context": {"input_confirmed": true, "teacher_method_status": "demo_instruction", "teacher_method": "Use a fraction strip with four equal parts. This is a demo instruction, not a claim about a real teacher."},
+  "processing": {"storage": "local", "external_processing": false}
+}

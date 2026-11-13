@@ -1,0 +1,40 @@
+ЛОКАЛЬНЫЙ ПРОТОКОЛ 1.0, МОДУЛЬ 0.1.0
+
+Запуск отдельного процесса --stdio; stdin/stdout только UTF-8 JSON lines.
+Один сериализованный запрос за раз; stdout не содержит логов или секретов.
+module.describe — версии/лимиты/пресеты, params={}.
+task.create — params={preset_id} ИЛИ {left,right,require_simplest?}.
+session.start — params={task_id,learner_id}, псевдонимный local ID.
+session.snapshot — params={session_id}.
+turn.submit — params={session_id,action:'answer',text} ИЛИ action:'hint'/'practice'.
+session.stop — params={session_id}.
+history.list — params={}, до100последнихзанятий.
+report.export — params={session_id}, явный локальный JSON в подпапке exports.
+
+Запрос: schema_version='1.0',request_id,operation,params,expected_revision?.
+Для turn.submit и session.stop expected_revision — текущая целая ревизия.
+Ответ: schema_version,module_version,request_id,status,session_revision,
+result,evidence,limitations. Result содержит task/session/assessment/visual
+и text_ru/text_en, если применимо. Stale revision → conflict без изменения.
+
+Изменение состояния занятия, попытка и квитанция fingerprint/ответ сохраняются
+в одной SQLite-транзакции. Экспорт отдельно создаёт неизменяемый снимок файла;
+после сбоя квитанции повтор сверяет и использует только точный прежний снимок.
+Общей атомарной транзакции между файловой системой и SQLite нет.
+Тот же request_id с тем же содержимым возвращает
+тот же исторический ответ; с другим — conflict. Read-only ответы не кешируются.
+Отклонённый до принятия запрос не получает успешной квитанции.
+Повтор после транспортного таймаута должен сохранять ID и содержимое;
+создание нового ID может выполнить новое действие.
+
+evidence.deterministic_check относится к одному числовому ответу и указанным
+checked_claims. Это не подтверждение освоения темы/эффективности наставника.
+assessment.state='invalid' — формат не распознан, не математическая ошибка.
+session.independent_correct/assisted_correct означают, что на текущей задаче
+была хотя бы одна соответствующая успешная попытка; после practice они сброшены.
+
+request.schema.json описывает внешний конверт, ограничения params также
+проверяются сервисом. Старые task.schema.json/module-manifest.schema.json
+описывают концепцию 0.0.0, не runtime. Фактический манифест 0.1.0 использует
+runtime-manifest.schema.json. Наличие схем не означает использования
+стороннего JSON Schema runtime: проверки сервиса написаны явно.

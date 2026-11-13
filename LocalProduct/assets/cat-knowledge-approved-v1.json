@@ -1,0 +1,280 @@
+{
+  "version": 1,
+  "pack_id": "cat-knowledge-approved-v1",
+  "language": "ru",
+  "origin": "original_project",
+  "approved": true,
+  "source_refs": [
+    {
+      "id": "unicef_communication",
+      "url": "https://www.unicef.org/parenting/child-care/11-tips-communicating-your-teen",
+      "role": "principle_reference_not_quoted"
+    },
+    {
+      "id": "unicef_listening_choice",
+      "url": "https://www.unicef.org/parenting/mental-health/how-to-talk-to-kids-mental-health",
+      "role": "principle_reference_not_quoted"
+    },
+    {
+      "id": "aap_homework",
+      "url": "https://www.healthychildren.org/English/ages-stages/gradeschool/school/Pages/Developing-Good-Homework-Habits.aspx",
+      "role": "principle_reference_not_quoted"
+    }
+  ],
+  "dataset_research_refs": [
+    {
+      "id": "blended_skill_talk",
+      "url": "https://github.com/facebookresearch/ParlAI/blob/main/parlai/tasks/blended_skill_talk/README.md",
+      "status": "research_only",
+      "runtime_approved": false,
+      "approval": "RAW_NOT_APPROVED"
+    },
+    {
+      "id": "oasst",
+      "url": "https://github.com/LAION-AI/Open-Assistant",
+      "status": "research_only",
+      "runtime_approved": false,
+      "approval": "RAW_NOT_APPROVED"
+    }
+  ],
+  "records": [
+    {
+      "id": "computer_pet",
+      "text": "Я компьютерный персонаж, а не человек. Мои ответы могут быть неточными. Если я не понял вопрос, можно сказать иначе или попросить взрослого помочь разобраться.",
+      "keywords": [
+        "кто ты",
+        "живой",
+        "человек",
+        "компьютерный кот",
+        "computer pet",
+        "are you real"
+      ],
+      "source": "original_project",
+      "approved": true
+    },
+    {
+      "id": "visible_conversation",
+      "text": "Разговор с помощником может сохраняться в приложении и быть доступен родителю. Я не обещаю тайну переписки. Если нужна помощь в важной или неприятной ситуации, можно обратиться к надёжному взрослому.",
+      "keywords": [
+        "переписка",
+        "история чата",
+        "секрет",
+        "тайна",
+        "кто читает",
+        "родитель видит"
+      ],
+      "source": "original_project",
+      "approved": true
+    },
+    {
+      "id": "respect_refusal",
+      "text": "Можно сказать «стоп», «не сейчас» или отказаться от предложенной темы. Не нужно продолжать разговор ради помощника. Позже можно самому выбрать, вернуться к теме или заняться другим делом.",
+      "keywords": [
+        "стоп",
+        "нет",
+        "не сейчас",
+        "не хочу",
+        "отказ",
+        "stop",
+        "no",
+        "not now"
+      ],
+      "source": "original_project",
+      "approved": true
+    },
+    {
+      "id": "one_question",
+      "text": "Когда вопросов много, можно выбрать один. Например: «Что нужно найти в задаче?» Ответ на него поможет решить, какой следующий шаг обсудить. Остальные вопросы могут подождать.",
+      "keywords": [
+        "один вопрос",
+        "много вопросов",
+        "что спросить",
+        "вопросы",
+        "one question"
+      ],
+      "source": "original_project",
+      "approved": true
+    },
+    {
+      "id": "choose_support",
+      "text": "Ты можешь выбрать, какая помощь сейчас подходит: рассказать, что случилось, попросить объяснение или сделать паузу. Сначала полезно понять твой выбор, а не давать сразу много советов.",
+      "keywords": [
+        "помощь",
+        "совет",
+        "выговориться",
+        "поддержка",
+        "help",
+        "support"
+      ],
+      "source": "original_project",
+      "approved": true
+    },
+    {
+      "id": "small_start",
+      "text": "Большое задание можно начать с маленького действия: открыть условие, отметить известные данные или попробовать один пример. Можно выбрать один шаг и посмотреть, что стало понятнее.",
+      "keywords": [
+        "начать уроки",
+        "начать задание",
+        "трудно начать",
+        "маленький шаг",
+        "домашка",
+        "homework start"
+      ],
+      "source": "original_project",
+      "approved": true
+    },
+    {
+      "id": "specific_feedback",
+      "text": "Ошибка в ответе не определяет, какой ты человек. Можно найти конкретный шаг: запись числа, размер доли или выбранное действие. Исправлять один понятный шаг обычно удобнее, чем угадывать весь ответ заново.",
+      "keywords": [
+        "ошибка",
+        "ошибки",
+        "неправильно",
+        "не получается",
+        "mistake",
+        "wrong answer"
+      ],
+      "source": "original_project",
+      "approved": true
+    },
+    {
+      "id": "word_homework",
+      "text": "Homework по-русски — «домашнее задание». Пример: «Я делаю домашнее задание». Если непонятно условие, можно отдельно найти известные данные и вопрос.",
+      "keywords": [
+        "homework",
+        "домашнее задание перевод",
+        "слово homework"
+      ],
+      "source": "original_project",
+      "approved": true
+    },
+    {
+      "id": "word_school",
+      "text": "School по-русски — «школа». Пример: «Сегодня в школе был урок». Это перевод слова, а не сведения о том, в какой школе учится конкретный ребёнок.",
+      "keywords": [
+        "school",
+        "школа перевод",
+        "слово school"
+      ],
+      "source": "original_project",
+      "approved": true
+    },
+    {
+      "id": "word_choice",
+      "text": "Choice по-русски — «выбор». Пример: «Я могу сделать свой выбор». Выбрать тему разговора и изменить семейные правила — разные вещи: правила обсуждаются с родителем.",
+      "keywords": [
+        "choice",
+        "выбор перевод",
+        "слово choice"
+      ],
+      "source": "original_project",
+      "approved": true
+    },
+    {
+      "id": "word_friend",
+      "text": "Friend по-русски — «друг». Можно сказать: «Я поговорил с другом». О знакомом человеке можно рассказывать без его адреса, паролей и других личных данных.",
+      "keywords": [
+        "friend",
+        "друг перевод",
+        "слово friend"
+      ],
+      "source": "original_project",
+      "approved": true
+    },
+    {
+      "id": "talk_roblox",
+      "text": "Если хочется поговорить о Roblox, можно рассказать, что ты выбрал делать или что построил. Помощник не должен делать вид, что уже видел игру или знает твои любимые занятия.",
+      "keywords": [
+        "roblox",
+        "роблокс",
+        "постройка roblox",
+        "игра roblox"
+      ],
+      "source": "original_project",
+      "approved": true
+    },
+    {
+      "id": "talk_minecraft",
+      "text": "Если хочешь рассказать о Minecraft, можно начать с одной идеи постройки или задачи. Например, описать, какую форму ты задумал. Это приглашение к разговору, а не утверждение о твоих интересах.",
+      "keywords": [
+        "minecraft",
+        "майнкрафт",
+        "постройка minecraft",
+        "игра minecraft"
+      ],
+      "source": "original_project",
+      "approved": true
+    },
+    {
+      "id": "fraction_parts",
+      "text": "В дроби 3/8 знаменатель 8 говорит, на сколько равных долей разделено одно целое. Числитель 3 показывает, сколько таких долей взято. Перед сравнением рисунков важно определить одно и то же целое.",
+      "keywords": [
+        "дробь",
+        "дроби",
+        "дробей",
+        "числитель",
+        "знаменатель",
+        "fraction",
+        "numerator",
+        "denominator"
+      ],
+      "source": "original_project",
+      "approved": true
+    },
+    {
+      "id": "fraction_equivalence",
+      "text": "Равные дроби обозначают одну величину: например, 2/6 и 1/3. При сокращении делят числитель и знаменатель на один положительный общий делитель. Значение и требование сократить ответ проверяются отдельно.",
+      "keywords": [
+        "равные дроби",
+        "эквивалентность",
+        "сократить",
+        "сокращение",
+        "equivalent fractions",
+        "simplify"
+      ],
+      "source": "original_project",
+      "approved": true
+    },
+    {
+      "id": "fraction_addition",
+      "text": "При сложении дробей нужно считать доли одинакового размера одного целого. Для одинаковых знаменателей складывают числители и сохраняют знаменатель. Например, 1/8 + 2/8 = 3/8. Разные знаменатели сначала приводят к общим долям.",
+      "keywords": [
+        "сложить дроби",
+        "складывать дроби",
+        "сложение",
+        "одинаковый знаменатель",
+        "add fractions"
+      ],
+      "source": "original_project",
+      "approved": true
+    },
+    {
+      "id": "parent_message",
+      "text": "Сообщение родителю отправляется отдельным явным действием в интерфейсе. Перед отправкой можно проверить текст. Ответ помощника сам по себе не означает отправку, доставку или прочтение сообщения родителем.",
+      "keywords": [
+        "написать папе",
+        "написать маме",
+        "сообщение родителю",
+        "отправить сообщение",
+        "папе",
+        "маме",
+        "message parent"
+      ],
+      "source": "original_project",
+      "approved": true
+    },
+    {
+      "id": "lesson_catalog",
+      "text": "В учебном каталоге проекта подготовлены пять черновиков уроков по дробям. Наличие файлов не означает, что котёнок уже проводит эти уроки. Доступные функции нужно проверять по состоянию подключённого учебного модуля.",
+      "keywords": [
+        "учебный каталог",
+        "материалы уроков",
+        "пять уроков",
+        "учебная база",
+        "курс дробей"
+      ],
+      "source": "original_project",
+      "approved": true
+    }
+  ]
+}

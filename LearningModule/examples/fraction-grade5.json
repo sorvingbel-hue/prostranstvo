@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0-draft",
+  "task_id": "demo_fraction_grade5_001",
+  "subject": "math",
+  "skill_id": "fraction.add.unlike_denominators",
+  "grade_hint": 5,
+  "standard_refs": ["CCSS.Math.Content.5.NF.A.1"],
+  "prompt": {
+    "en": "Add 1/2 and 1/3. Write the answer in simplest form. Explain how you chose equal-sized parts.",
+    "ru": "Сложи 1/2 и 1/3. Запиши ответ в сокращённом виде. Объясни, как ты выбрал части одинакового размера."
+  },
+  "source": {"kind": "original_demo", "label": "Original synthetic format example, not a school assignment", "use_scope": "original_example"},
+  "context": {"input_confirmed": true, "teacher_method_status": "unknown", "teacher_method": ""},
+  "processing": {"storage": "local", "external_processing": false}
+}

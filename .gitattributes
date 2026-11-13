@@ -1,0 +1,2 @@
+# Preserve byte-for-byte checksums for packaged assets.
+LocalProduct/assets/** -text
