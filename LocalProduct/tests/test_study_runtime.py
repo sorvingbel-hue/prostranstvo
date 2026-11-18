@@ -233,12 +233,12 @@ class PersistentPanelTests(unittest.TestCase):
         self.tick()
         self.assertEqual(self.session.remaining_seconds, 3600)
 
-    def submit_daily_plan(self, *, start_study=True):
+    def submit_daily_plan(self, *, start_study=True, duration_minutes=60):
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         root = Path(directory.name)
         self.resume = StudyResume(root / 'study', clock=lambda: self.clock.wall)
-        lease = self.resume.activate(60) if start_study else None
+        lease = self.resume.activate(duration_minutes) if start_study else None
         self.create()
         store = DailyPlan(root / 'plan')
         plan = store.publish(['Подготовить тетради'], 45, expected_revision=None)
@@ -267,6 +267,23 @@ class PersistentPanelTests(unittest.TestCase):
         self.assertFalse(self.session.active)
         self.assertIn('завершён', panel.notice.cget('text'))
         self.assertEqual(panel.play_button.winfo_manager(), 'pack')
+
+    def test_indefinite_lessons_stay_on_until_valid_plan_approval(self):
+        lease, panel = self.submit_daily_plan(duration_minutes=0)
+        self.clock.wall += 86400
+        self.clock.monotonic += 86400
+        self.tick()
+        self.assertTrue(self.session.active)
+        self.assertIn('Без таймера', self.panel.status.get())
+        self.assertEqual(self.panel.active_study_id(), lease['session_id'])
+        self.dialog.return_value = '000000'
+        panel.approve_button.invoke()
+        self.assertEqual(self.resume.read(), lease)
+        self.dialog.return_value = '123456'
+        panel.approve_button.invoke()
+        self.assertEqual(panel.store.read()['status'], 'approved')
+        self.assertIsNone(self.resume.read())
+        self.assertFalse(self.session.active)
 
     def test_replacement_created_during_pin_survives_approval(self):
         lease, panel = self.submit_daily_plan()
@@ -340,6 +357,135 @@ class PersistentPanelTests(unittest.TestCase):
         self.assertIsNone(self.resume.value)
         self.assertEqual(self.resume.startup_calls, 0)
         self.assertTrue(self.panel.request_stop())
+
+
+    def test_saved_plan_popover_opens_once_and_dismissal_keeps_study_running(self):
+        panel = self.create()
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        store = DailyPlan(Path(directory.name) / 'plan')
+        store.publish(['Подготовить тетради'], 45, expected_revision=None)
+        panel.enable_plan_popup(store=store)
+        popup = panel._plan_popup
+
+        panel.start_preview()
+        self.tick()
+        self.assertIsNone(popup.window)
+        panel.request_stop()
+
+        with mock.patch.object(tk.Toplevel, 'deiconify'):
+            self.assertTrue(panel.start_lessons(duration_minutes=30))
+            self.tick()
+        window = popup.window
+        self.assertIsNotNone(window)
+        self.assertEqual(window.title(), study_runtime.PLAN_WINDOW_TITLE)
+        checklist = next(child for child in window.winfo_children() if isinstance(child, DailyPlanPanel))
+        self.assertEqual(checklist.plan['tasks'][0]['text'], 'Подготовить тетради')
+        self.tick()
+        self.assertIs(popup.window, window)
+        popup._dismiss()
+        self.tick()
+        self.assertIsNone(popup.window)
+        self.assertTrue(panel.session.active)
+        self.assertIsNotNone(panel.active_study_id())
+
+    def test_startup_session_without_current_plan_does_not_open_popup(self):
+        self.resume.activate(30)
+        panel = self.create()
+        store = mock.Mock()
+        store.read.return_value = None
+        panel.enable_plan_popup(store=store)
+        self.tick()
+        self.tick()
+        store.read.assert_called_once()
+        self.assertIsNone(panel._plan_popup.window)
+        self.assertTrue(panel.session.active)
+
+    def test_startup_session_uses_only_one_popup_across_controllers(self):
+        self.resume.activate(30)
+        panel = self.create()
+        store = mock.Mock()
+        store.read.return_value = {'date': '2026-11-15'}
+        panel.enable_plan_popup(store=store)
+        first = panel._plan_popup
+        second = study_runtime.StudyPlanPopup(panel, store, None)
+        self.addCleanup(second.close)
+
+        with mock.patch.object(first, '_open') as show_first, mock.patch.object(second, '_open') as show_second:
+            self.tick()
+            second.show_for(panel.active_study_id())
+        show_first.assert_called_once()
+        show_second.assert_not_called()
+
+
+    def test_popup_failure_preserves_polling_and_saved_session(self):
+        self.resume.activate(30)
+        panel = self.create()
+        panel._plan_popup = mock.Mock()
+        panel._plan_popup.show_for.side_effect = [AttributeError('fixture popup failure'), None]
+        self.tick()
+        self.assertIsNotNone(panel._timer)
+        self.assertFalse(self.session.active)
+        self.assertIsNotNone(self.resume.value)
+        self.tick()
+        self.assertTrue(self.session.active)
+        self.assertIsNotNone(panel._timer)
+
+    def test_runtime_health_confirms_actual_active_session(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.resume.root = Path(directory.name)
+        lease = self.resume.activate(30)
+        panel = self.create()
+        panel.enable_health_status()
+        self.tick()
+        import json
+        import os
+        state = json.loads(panel._health_path.read_text(encoding='utf-8'))
+        self.assertEqual(state['pid'], os.getpid())
+        self.assertEqual(state['session_id'], lease['session_id'])
+        self.assertTrue(state['active'])
+        self.assertFalse(state['preview'])
+        self.assertIsNone(state['error_type'])
+        self.assertEqual(state['observed_windows'], 0)
+
+    def test_unwritable_health_file_keeps_enforcement_polling(self):
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        self.resume.root = Path(directory.name)
+        self.resume.activate(30)
+        panel = self.create()
+        panel.enable_health_status()
+        with mock.patch.object(study_runtime.os, 'replace', side_effect=OSError('fixture full disk')):
+            self.tick()
+        self.assertTrue(self.session.active)
+        self.assertIsNotNone(panel._timer)
+        self.assertFalse(panel._health_path.exists())
+
+
+    def test_codex_minimizer_runs_only_during_active_lessons(self):
+        panel = self.create()
+        policy = mock.Mock()
+        policy.enabled.return_value = True
+        policy.reconcile.return_value = {'enabled': True, 'minimized': 1, 'errors': 0}
+        panel.bind_codex_pause(policy)
+        self.tick()
+        policy.reconcile.assert_called_with(active=False)
+        self.resume.activate(30)
+        self.tick()
+        policy.reconcile.assert_called_with(active=True)
+        self.assertEqual(panel._codex_minimized, 2)
+
+    def test_codex_minimizer_error_does_not_stop_lessons(self):
+        self.resume.activate(30)
+        panel = self.create()
+        policy = mock.Mock()
+        policy.enabled.return_value = True
+        policy.reconcile.side_effect = OSError('fixture unavailable')
+        panel.bind_codex_pause(policy)
+        self.tick()
+        self.assertTrue(panel.session.active)
+        self.assertIsNotNone(panel._timer)
 
 
 class MainTests(unittest.TestCase):

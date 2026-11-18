@@ -13,7 +13,7 @@ PRODUCT = Path(__file__).resolve().parents[1]
 
 class DispatcherTests(unittest.TestCase):
     def test_paths_import_has_no_writes_and_honors_current_localappdata(self):
-        with tempfile.TemporaryDirectory(dir=PRODUCT / 'build') as temp:
+        with tempfile.TemporaryDirectory(prefix='prostranstvo-dispatcher-') as temp:
             root = Path(temp) / 'fresh-profile'
             with mock.patch.dict(os.environ, {'LOCALAPPDATA': str(root)}), mock.patch.object(sys, 'path', [str(PRODUCT / 'src'), *sys.path]), mock.patch.dict(sys.modules):
                 sys.modules.pop('paths', None)
@@ -23,7 +23,7 @@ class DispatcherTests(unittest.TestCase):
                 self.assertEqual(paths.APP_ROOT, PRODUCT / 'src')
 
     def test_prepare_uninstall_only_uses_beta_helpers_and_preserves_absent_data(self):
-        with tempfile.TemporaryDirectory(dir=PRODUCT / 'build') as temp:
+        with tempfile.TemporaryDirectory(prefix='prostranstvo-dispatcher-') as temp:
             root = Path(temp)
             with mock.patch.dict(os.environ, {'LOCALAPPDATA': str(root)}), mock.patch.object(sys, 'path', [str(PRODUCT / 'src'), *sys.path]), mock.patch.dict(sys.modules):
                 for name in ('paths', 'local_main', 'activity_startup', 'family_startup', 'activity_core', 'history_schedule', 'browser_history', 'family_messages', 'family_telegram'):

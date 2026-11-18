@@ -16,7 +16,7 @@ from daily_plan_guide import open_daily_plan_guide
 from study_guard import StudyGuard
 
 
-STUDY_DURATIONS = {'1 час': 60, '2 часа': 120}
+STUDY_DURATIONS = {'1 час': 60, '2 часа': 120, 'Без таймера': 0}
 ARMOR_NAMES = {
     'none': 'без брони', 'leather': 'кожаная броня', 'copper': 'медная броня',
     'iron': 'железная броня', 'gold': 'золотая броня', 'diamond': 'алмазная броня',
@@ -318,7 +318,7 @@ class DailyPlanPanel(ttk.Frame):
         controls.pack(fill='x', pady=(8, 6))
         ttk.Label(controls, text='Уроки').pack(side='left', padx=(0, 8))
         self.study_duration = ttk.Combobox(
-            controls, width=8, state='readonly', values=tuple(STUDY_DURATIONS),
+            controls, width=12, state='readonly', values=tuple(STUDY_DURATIONS),
         )
         self.study_duration.current(0)
         self.study_duration.pack(side='left', padx=(0, 8))

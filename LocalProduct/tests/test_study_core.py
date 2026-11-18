@@ -98,6 +98,158 @@ class StudySessionTests(unittest.TestCase):
                 self.assertEqual(self.session.tick(), [])
                 self.assertEqual(self.desktop.closed, [Window()])
 
+    def test_roblox_retries_ignored_close_until_window_disappears(self):
+        for delay in (5, 10):
+            with self.subTest(delay=delay):
+                self.clock.now = 0
+                self.desktop.closed.clear()
+                game = Window(executable=r'C:\Games\Versions\version-123\ROBLOXPLAYERBETA.EXE')
+                self.desktop.windows = [game]
+
+                def close_on_second_request():
+                    if len(self.desktop.closed) == 2:
+                        self.desktop.windows = []
+
+                self.desktop.on_close = close_on_second_request
+                self.start(delay_seconds=delay)
+                self.session.tick()
+                self.set_time(delay)
+                self.session.tick()
+                self.assertEqual(self.desktop.closed, [game])
+                self.set_time(2 * delay - .01)
+                self.session.tick()
+                self.assertEqual(self.desktop.closed, [game])
+                self.set_time(2 * delay)
+                self.session.tick()
+                self.assertEqual(self.desktop.closed, [game, game])
+                self.set_time(3 * delay)
+                self.session.tick()
+                self.assertEqual(self.desktop.closed, [game, game])
+                self.assertEqual(self.session.pending, [])
+
+    def test_roblox_unavailable_close_is_retried_after_full_delay(self):
+        game = Window(executable=r'C:\Games\RobloxPlayerBeta.exe')
+        self.desktop.windows = [game]
+        self.desktop.outcome = 'unavailable'
+        self.start(delay_seconds=5)
+        self.session.tick()
+        self.set_time(5)
+        self.assertEqual(self.session.tick()[0]['action'], 'unavailable')
+        self.assertTrue(self.session.pending[0]['retrying'])
+        self.assertEqual(self.session.pending[0]['remaining_seconds'], 5)
+        self.desktop.outcome = 'requested'
+        self.set_time(9.99)
+        self.assertEqual(self.session.tick(), [])
+        self.set_time(10)
+        self.assertEqual(self.session.tick()[0]['action'], 'requested')
+        self.assertEqual(self.desktop.closed, [game, game])
+
+    def test_roblox_same_identity_reopened_between_polls_is_closed_again(self):
+        game = Window(executable=r'C:\Games\RobloxPlayerBeta.exe')
+        self.desktop.windows = [game]
+        self.start(delay_seconds=5)
+        self.session.tick()
+        self.set_time(5)
+        self.session.tick()
+        reopened = Window(executable=game.executable, title='Reopened game')
+        self.assertEqual(reopened.identity, game.identity)
+        self.desktop.windows = [reopened]
+        self.set_time(10)
+        self.session.tick()
+        self.assertEqual(self.desktop.closed, [game, reopened])
+
+    def test_roblox_resume_gap_restarts_retry_grace(self):
+        game = Window(executable=r'C:\Games\RobloxPlayerBeta.exe')
+        self.desktop.windows = [game]
+        self.start(duration_minutes=2, delay_seconds=5)
+        self.session.tick()
+        self.set_time(5)
+        self.session.tick()
+        self.clock.now = 30
+        self.assertEqual(self.session.tick(), [])
+        self.set_time(34.99)
+        self.assertEqual(self.session.tick(), [])
+        self.assertEqual(self.desktop.closed, [game])
+        self.set_time(35)
+        self.session.tick()
+        self.assertEqual(self.desktop.closed, [game, game])
+
+    def test_roblox_retry_never_runs_at_or_after_expiry(self):
+        game = Window(executable=r'C:\Games\RobloxPlayerBeta.exe')
+        self.desktop.windows = [game]
+        self.start(delay_seconds=10)
+        self.session.tick()
+        self.set_time(50)
+        self.session.tick()
+        self.assertEqual(len(self.desktop.closed), 5)
+        self.set_time(60)
+        self.assertEqual(self.session.tick(), [{'action': 'expired'}])
+        self.set_time(70)
+        self.assertEqual(self.session.tick(), [])
+        self.assertEqual(len(self.desktop.closed), 5)
+
+    def test_roblox_allowlist_and_preview_keep_existing_behavior(self):
+        game = Window(executable=r'C:\Games\RobloxPlayerBeta.exe')
+        self.desktop.windows = [game]
+        self.start(allowed_paths=['c:/games/ROBLOXPLAYERBETA.exe'])
+        self.session.tick()
+        self.set_time(20)
+        self.assertEqual(self.session.tick(), [])
+        self.assertEqual(self.desktop.closed, [])
+        self.assertEqual(self.session.pending, [])
+
+        self.clock.now = 0
+        self.start(preview=True)
+        self.session.tick()
+        self.set_time(10)
+        self.assertEqual(self.session.tick(), [{'action': 'preview', 'application': 'RobloxPlayerBeta.exe'}])
+        self.set_time(30)
+        self.assertEqual(self.session.tick(), [])
+        self.assertEqual(self.desktop.closed, [])
+
+
+    def test_roblox_escalates_only_after_normal_close_and_full_second_grace(self):
+        game = Window(executable=r'C:\Users\test\AppData\Local\Roblox\Versions\version-1234567890abcdef\RobloxPlayerBeta.exe')
+        self.desktop.windows = [game]
+        self.desktop.terminate_roblox = mock.Mock(return_value='terminated')
+        self.start(delay_seconds=5)
+        self.session.tick()
+        self.set_time(5)
+        self.assertEqual(self.session.tick()[0]['action'], 'requested')
+        self.desktop.terminate_roblox.assert_not_called()
+        self.set_time(9.99)
+        self.assertEqual(self.session.tick(), [])
+        self.desktop.terminate_roblox.assert_not_called()
+        self.set_time(10)
+        self.assertEqual(self.session.tick()[0]['action'], 'terminated')
+        self.desktop.terminate_roblox.assert_called_once_with(game)
+        self.assertEqual(self.desktop.closed, [game])
+
+    def test_denied_roblox_escalation_retries_ordinary_close(self):
+        game = Window(executable=r'C:\Games\RobloxPlayerBeta.exe')
+        self.desktop.windows = [game]
+        self.desktop.terminate_roblox = mock.Mock(return_value='unavailable')
+        self.start(delay_seconds=5)
+        self.session.tick()
+        self.set_time(5)
+        self.session.tick()
+        self.set_time(10)
+        self.assertEqual(self.session.tick()[0]['action'], 'requested')
+        self.assertEqual(self.desktop.closed, [game, game])
+        self.desktop.terminate_roblox.assert_called_once_with(game)
+
+    def test_document_and_preview_never_escalate(self):
+        self.desktop.terminate_roblox = mock.Mock()
+        for preview in (False, True):
+            with self.subTest(preview=preview):
+                self.clock.now = 0
+                self.desktop.windows = [Window()]
+                self.start(delay_seconds=5, preview=preview)
+                self.session.tick()
+                self.set_time(20)
+                self.session.tick()
+        self.desktop.terminate_roblox.assert_not_called()
+
     def test_new_window_during_session_has_full_grace(self):
         self.desktop.windows = []
         self.start()
@@ -348,7 +500,7 @@ class StudySessionTests(unittest.TestCase):
         self.assertEqual(self.desktop.closed, [Window()])
 
     def test_invalid_options_and_preview_are_rejected(self):
-        invalid = [dict(duration_minutes=True), dict(duration_minutes=0), dict(duration_minutes=241),
+        invalid = [dict(duration_minutes=True), dict(duration_minutes=-1), dict(duration_minutes=241),
                    dict(delay_seconds=True), dict(delay_seconds=7), dict(allowed_paths='C:/Game.exe'),
                    dict(allowed_paths=['Game.exe']), dict(allowed_paths=['C:/game.txt']),
                    dict(allowed_paths=['C:/bad\x00.exe']), dict(allowed_paths=['C:/game.exe'] * 101)]
@@ -390,7 +542,7 @@ class StudySettingsTests(unittest.TestCase):
     def test_invalid_settings_do_not_overwrite_previous_preferences(self):
         previous = self.settings.save(duration_minutes=30, delay_seconds=10, allowed_paths=[])
         with self.assertRaises(ValueError):
-            self.settings.save(duration_minutes=0, delay_seconds=10, allowed_paths=[])
+            self.settings.save(duration_minutes=-1, delay_seconds=10, allowed_paths=[])
         self.assertEqual(self.settings.load(), previous)
 
     def test_interrupted_atomic_replace_preserves_previous_settings(self):

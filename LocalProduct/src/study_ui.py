@@ -9,7 +9,12 @@ import tkinter as tk
 from tkinter import filedialog, simpledialog, ttk
 
 
+UNTIMED_LABEL = 'Без таймера'
+
+
 def duration_text(seconds):
+    if seconds == math.inf:
+        return UNTIMED_LABEL
     seconds = max(0, math.ceil(seconds))
     minutes, seconds = divmod(seconds, 60)
     return f"{minutes:02}:{seconds:02}"
@@ -42,6 +47,8 @@ class StudyPanel(ttk.Frame):
         self._allowed_paths = []
         self._displayed_rows = None
         self._event_lines = []
+        self._codex_pause_policy = None
+        self.codex_pause_enabled = tk.BooleanVar(value=False)
         self.columnconfigure(0, weight=1)
         self.rowconfigure(6, weight=1)
         self.bind("<Destroy>", self._on_destroy, add=True)
@@ -64,8 +71,8 @@ class StudyPanel(ttk.Frame):
         ttk.Label(options, text="Продолжительность, минут").pack(side="left")
         self.duration = tk.StringVar(value="30")
         self.duration_box = ttk.Combobox(
-            options, textvariable=self.duration, values=(15, 30, 45, 60, 90, 120),
-            state="readonly", width=5,
+            options, textvariable=self.duration, values=(15, 30, 45, 60, 90, 120, 240, UNTIMED_LABEL),
+            state="readonly", width=12,
         )
         self.duration_box.pack(side="left", padx=(7, 20))
         ttk.Label(options, text="Задержка закрытия, секунд").pack(side="left")
@@ -142,10 +149,39 @@ class StudyPanel(ttk.Frame):
                 self.guard_status.set("PIN родителя установлен. Он нужен для настройки плана и управления уроками.")
         except Exception as error:
             self.notice.set("Не удалось проверить PIN родителя. " + str(error)[:180])
+        self.codex_pause_button = ttk.Checkbutton(
+            self, text="Сворачивать Codex во время уроков", variable=self.codex_pause_enabled,
+            command=self._toggle_codex_pause, state="disabled",
+        )
+        self.codex_pause_button.grid(row=9, column=0, sticky="w", pady=(6, 0))
         self._schedule()
 
+    def bind_codex_pause(self, policy):
+        self._codex_pause_policy = policy
+        self.codex_pause_button.configure(state="normal")
+        try:
+            self.codex_pause_enabled.set(policy.enabled())
+        except (OSError, ValueError) as error:
+            self.notice.set("Не удалось прочитать настройку Codex. " + str(error)[:180])
+
+    def _toggle_codex_pause(self):
+        policy = self._codex_pause_policy
+        if policy is None:
+            return
+        try:
+            previous = policy.enabled()
+            requested = self.codex_pause_enabled.get()
+            if not self.authorize_parent("Доступ к Codex"):
+                self.codex_pause_enabled.set(previous)
+                return
+            policy.set_enabled(requested)
+            self.notice.set("Во время уроков окна Codex будут сворачиваться." if requested
+                            else "Автоматическое сворачивание Codex выключено.")
+        except (OSError, RuntimeError, ValueError) as error:
+            self.notice.set("Не удалось изменить доступ к Codex. " + str(error)[:180])
+
     def _apply_settings(self, value):
-        self.duration.set(str(value["duration_minutes"]))
+        self.duration.set(str(value["duration_minutes"]) if value["duration_minutes"] else UNTIMED_LABEL)
         self.delay.set(str(value["delay_seconds"]))
         self._allowed_paths = list(value["allowed_paths"])
         self.allowed_list.delete(0, "end")
@@ -154,7 +190,8 @@ class StudyPanel(ttk.Frame):
 
     def _save_settings(self, *, duration_minutes=None):
         if duration_minutes is None:
-            duration_minutes = int(self.duration.get())
+            selected = self.duration.get()
+            duration_minutes = 0 if selected == UNTIMED_LABEL else int(selected)
         value = self.settings.save(
             duration_minutes=duration_minutes,
             delay_seconds=int(self.delay.get()),
@@ -370,9 +407,12 @@ class StudyPanel(ttk.Frame):
         rows = []
         for item in self.session.pending:
             window = item["window"]
-            if item["requested"]:
+            if item.get("retrying"):
+                action = f"Повтор закрытия через {max(0, math.ceil(item['remaining_seconds']))} с"
+            elif item["requested"]:
                 labels = {
                     "preview": "Пробная отметка", "requested": "Закрытие запрошено",
+                    "terminated": "Roblox завершён",
                     "gone": "Окно уже закрыто", "changed": "Окно изменилось",
                     "unavailable": "Окно недоступно",
                 }
@@ -394,6 +434,7 @@ class StudyPanel(ttk.Frame):
             labels = {
                 "preview": "Пробная отметка",
                 "requested": "Закрытие запрошено",
+                "terminated": "Roblox завершён",
                 "gone": "Окно уже закрыто",
                 "changed": "Окно изменилось",
                 "unavailable": "Окно недоступно",
@@ -411,7 +452,8 @@ class StudyPanel(ttk.Frame):
             name = "Пробный режим" if self.session.preview else "Уроки"
             remaining = duration_text(self.session.remaining_seconds)
             self.status.set(f"{name} · {remaining}")
-            waiting = [item["remaining_seconds"] for item in self.session.pending if not item["requested"]]
+            waiting = [item["remaining_seconds"] for item in self.session.pending
+                       if not item["requested"] or item.get("retrying")]
             detail = (
                 f"Команда закрытия через {max(0, math.ceil(min(waiting)))} с. Сохраните работу."
                 if waiting else "Режим действует для вновь открываемых окон."
@@ -419,7 +461,8 @@ class StudyPanel(ttk.Frame):
             if self.session.preview:
                 detail = "Пробная проверка окон. Результаты в приложении."
             if self._indicator_text is not None:
-                self._indicator_text.set(f"{name} · осталось {remaining}\n{detail}")
+                timing = remaining if remaining == UNTIMED_LABEL else f"осталось {remaining}"
+                self._indicator_text.set(f"{name} · {timing}\n{detail}")
         else:
             self._hide_indicator()
             self._set_controls()

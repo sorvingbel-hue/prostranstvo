@@ -1,4 +1,4 @@
-"""Resume a finite, visible study session after Windows sign-in.
+"""Resume a visible study session after Windows sign-in.
 
 The owned Run entry can remain idle after a session finishes. Its next launch
 exits when there is no future lease. This avoids clearing a newer session's
@@ -9,24 +9,36 @@ from __future__ import annotations
 import argparse
 import ctypes
 import hashlib
+import json
 import math
 import os
+import tempfile
+import time
 import tkinter as tk
 from tkinter import ttk
 
+from activity_core import no_links
+from codex_pause import CodexPause
 from study_guard import StudyGuard
 from study_resume import StudyResume
 from study_ui import StudyPanel
+from study_windows import PLAN_WINDOW_TITLE
 
 
 class PersistentStudyPanel(StudyPanel):
-    """Share one absolute end time between the app and the startup runtime."""
+    """Share a saved session between the app and the startup runtime."""
 
     def __init__(self, parent, settings=None, session=None, desktop=None, guard=None,
                  resume=None):
         self.resume_store = resume if resume is not None else StudyResume()
         self._lease = None
+        self._plan_popup = None
+        self._health_path = None
+        self._next_health_write = 0
+        self._codex_minimized = 0
+        self._codex_pause_enabled = False
         super().__init__(parent, settings=settings, session=session, desktop=desktop, guard=guard)
+        self.bind_codex_pause(CodexPause(self.resume_store.root))
         try:
             self._sync_lease()
             if self.session.active:
@@ -47,16 +59,19 @@ class PersistentStudyPanel(StudyPanel):
         value = self.settings.load()
         self._apply_settings(value)
         self._lease = lease
+        untimed = remaining == math.inf
         self.session.start(
-            duration_minutes=max(1, min(240, math.ceil(remaining / 60))),
+            duration_minutes=0 if untimed else max(1, min(240, math.ceil(remaining / 60))),
             delay_seconds=value['delay_seconds'], preview=False,
             allowed_paths=value['allowed_paths'],
         )
-        self.session.set_remaining(remaining)
+        if not untimed:
+            self.session.set_remaining(remaining)
         self._event_lines.clear()
         self._set_controls()
         self._show_indicator()
-        self.notice.set('Режим уроков восстановлен до сохранённого времени окончания.')
+        self.notice.set('Уроки включены без таймера.' if untimed else
+                        'Режим уроков восстановлен до сохранённого времени окончания.')
 
     def _sync_lease(self):
         lease = self.resume_store.read()
@@ -108,6 +123,54 @@ class PersistentStudyPanel(StudyPanel):
             return lease['session_id']
         return None
 
+    def enable_plan_popup(self, *, store=None, living_society_target=None):
+        from daily_plan import DailyPlan
+        self._plan_popup = StudyPlanPopup(
+            self, DailyPlan() if store is None else store, living_society_target,
+        )
+
+    def enable_health_status(self):
+        self._health_path = self.resume_store.root / 'runtime-status.json'
+
+    def _write_health_status(self, error):
+        if self._health_path is None:
+            return
+        now = time.monotonic()
+        if error is None and now < self._next_health_write:
+            return
+        pending = self.session.pending
+        value = {
+            'version': 1, 'pid': os.getpid(), 'heartbeat_utc': time.time(),
+            'active': self.session.active, 'preview': self.session.preview,
+            'session_id': self._lease['session_id'] if self._lease else None,
+            'expires_utc': self._lease['expires_utc'] if self._lease else None,
+            'observed_windows': len(pending),
+            'close_requests': sum(item['result'] == 'requested' for item in pending),
+            'error_type': type(error).__name__ if error else None,
+            'codex_pause_enabled': self._codex_pause_enabled,
+            'codex_windows_minimized': self._codex_minimized,
+        }
+        no_links(self._health_path, self._health_path.exists())
+        descriptor, temporary = tempfile.mkstemp(
+            prefix='.study-health-', suffix='.tmp', dir=self._health_path.parent,
+        )
+        try:
+            with os.fdopen(descriptor, 'w', encoding='utf-8') as stream:
+                json.dump(value, stream, allow_nan=False)
+                stream.flush()
+                os.fsync(stream.fileno())
+            no_links(self._health_path, self._health_path.exists())
+            os.replace(temporary, self._health_path)
+            self._next_health_write = now + 2
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+
+    def close(self):
+        if self._plan_popup is not None:
+            self._plan_popup.close()
+        super().close()
+
     def complete_plan_study(self, session_id):
         """End the submitted plan's session after the caller verifies the parent PIN."""
         stopped = self.resume_store.clear(session_id)
@@ -131,6 +194,7 @@ class PersistentStudyPanel(StudyPanel):
         self._timer = None
         if self.closed:
             return
+        error = None
         try:
             # The persisted deadline is checked before another window-close request.
             # This also adopts a parent extension when this panel is currently idle.
@@ -138,16 +202,34 @@ class PersistentStudyPanel(StudyPanel):
             if self.session.active:
                 super()._refresh()
                 self._clear_finished_lease()
-        except Exception as error:
-            self._runtime_error(error)
-        self._schedule()
+            try:
+                paused = self._codex_pause_policy.reconcile(
+                    active=self.session.active and not self.session.preview,
+                )
+                self._codex_pause_enabled = paused['enabled']
+                self._codex_minimized += paused['minimized']
+            except (OSError, RuntimeError, ValueError) as caught:
+                self.notice.set('Не удалось свернуть Codex. ' + str(caught)[:180])
+            if self._plan_popup is not None and self.session.active and not self.session.preview and self._lease:
+                self._plan_popup.show_for(self._lease['session_id'])
+        except Exception as caught:
+            error = caught
+            self._runtime_error(caught)
+        finally:
+            try:
+                self._write_health_status(error)
+            except (OSError, ValueError):
+                pass
+            finally:
+                self._schedule()
 
 
 class RuntimeLock:
-    """Only the dedicated startup runtime owns this current-session name."""
+    """One controller can own a named function per Windows sign-in and data root."""
 
-    def __init__(self, root):
+    def __init__(self, root, name='StudyRuntime'):
         self.root = root
+        self.name = name
         self.handle = None
         self.existed = False
 
@@ -158,16 +240,98 @@ class RuntimeLock:
         kernel.CloseHandle.argtypes = [ctypes.c_void_p]
         key = hashlib.sha256(os.path.normcase(str(self.root.absolute())).encode('utf-8')).hexdigest()
         self.kernel = kernel
-        self.handle = kernel.CreateMutexW(None, False, 'Local\\ProstranstvoStudyRuntime-' + key)
+        ctypes.set_last_error(0)
+        self.handle = kernel.CreateMutexW(None, False, 'Local\\Prostranstvo' + self.name + '-' + key)
         if not self.handle:
             raise ctypes.WinError(ctypes.get_last_error())
         self.existed = ctypes.get_last_error() == 183
         return self
 
     def __exit__(self, *args):
+        self.close()
+
+    def close(self):
         if self.handle:
             self.kernel.CloseHandle(self.handle)
             self.handle = None
+
+
+class StudyPlanPopup:
+    """Show today's saved plan once per study session across desktop controllers."""
+
+    def __init__(self, study, store, living_society_target):
+        self.study = study
+        self.store = store
+        self.living_society_target = living_society_target
+        self.last_session = None
+        self.lock = None
+        self.window = None
+        self.raise_timer = None
+
+    def show_for(self, session_id):
+        if session_id == self.last_session:
+            return
+        try:
+            if self.store.read() is None:
+                self.last_session = session_id
+                return
+            if self.lock is None:
+                lock = RuntimeLock(self.study.resume_store.root, 'StudyPlanWindow')
+                lock.__enter__()
+                if lock.existed:
+                    lock.close()
+                    self.last_session = session_id
+                    return
+                self.lock = lock
+            self.last_session = session_id
+            self._dismiss()
+            self._open()
+        except (OSError, RuntimeError, ValueError, tk.TclError) as error:
+            self.last_session = session_id
+            self.close()
+            self.study.notice.set('Не удалось открыть план на сегодня. ' + str(error)[:180])
+
+    def _open(self):
+        from daily_plan_ui import DailyPlanPanel
+        root = self.study.winfo_toplevel()
+        window = self.window = tk.Toplevel(root)
+        window.withdraw()
+        window.title(PLAN_WINDOW_TITLE)
+        width = min(1100, window.winfo_screenwidth())
+        height = min(760, window.winfo_screenheight())
+        window.geometry(f'{width}x{height}')
+        window.protocol('WM_DELETE_WINDOW', self._dismiss)
+        plan = DailyPlanPanel(
+            window, store=self.store, guard=self.study.guard, study=self.study,
+            living_society_target=self.living_society_target,
+        )
+        plan.pack(fill='both', expand=True)
+        window.attributes('-topmost', True)
+        window.deiconify()
+        window.lift()
+        self.raise_timer = window.after(1500, self._restore_z_order)
+
+    def _restore_z_order(self):
+        self.raise_timer = None
+        self.window.attributes('-topmost', False)
+
+    def _dismiss(self):
+        if self.window is not None:
+            window = self.window
+            self.window = None
+            if window.winfo_exists():
+                if self.raise_timer is not None:
+                    window.after_cancel(self.raise_timer)
+                window.destroy()
+            self.raise_timer = None
+
+    def close(self):
+        try:
+            self._dismiss()
+        finally:
+            if self.lock is not None:
+                self.lock.close()
+                self.lock = None
 
 
 def main(argv=None):
@@ -175,15 +339,17 @@ def main(argv=None):
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument('--resume', action='store_true')
     mode.add_argument('--start-minutes', type=int)
+    mode.add_argument('--start-indefinitely', action='store_true')
     args = parser.parse_args(argv)
     store = StudyResume()
-    if args.start_minutes is not None:
-        if not 1 <= args.start_minutes <= 240:
+    if not args.resume:
+        minutes = 0 if args.start_indefinitely else args.start_minutes
+        if not args.start_indefinitely and not 1 <= minutes <= 240:
             raise ValueError('Продолжительность должна быть от 1 до 240 минут')
         if not StudyGuard().configured():
             raise ValueError('Сначала задайте PIN родителя в приложении')
         store.enable_startup()
-        store.activate(args.start_minutes)
+        store.activate(minutes)
     lease = store.read()
     if lease is None:
         return 0
@@ -204,6 +370,8 @@ def main(argv=None):
         style.configure('TLabel', font=('Segoe UI', 11))
         style.configure('TButton', font=('Segoe UI', 11), padding=9)
         panel = PersistentStudyPanel(root, resume=store)
+        panel.enable_health_status()
+        panel.enable_plan_popup()
         panel.pack(fill='both', expand=True)
         shell = None
 

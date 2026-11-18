@@ -1,14 +1,17 @@
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 """Synthetic local PIN fixtures. No personal PIN or settings are read."""
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import json
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
+
+import study_guard
 from study_guard import ITERATIONS, StudyGuard
 
 PIN = '246810'
@@ -123,6 +126,76 @@ class StudyGuardTests(unittest.TestCase):
         self.clock.now = 30
         self.assertFalse(self.guard.verify('bad'))
         self.assertTrue(self.guard.verify(PIN))
+
+    def test_attempt_budget_is_shared_by_concurrent_instances(self):
+        self.configure()
+        other = StudyGuard(self.root, self.clock)
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            first = pool.submit(self.guard.verify, OTHER_PIN)
+            second = pool.submit(other.verify, OTHER_PIN)
+            self.assertFalse(first.result(timeout=5))
+            self.assertFalse(second.result(timeout=5))
+        for _ in range(3):
+            self.assertFalse(other.verify('bad'))
+        with self.assertRaisesRegex(ValueError, 'через 30 с'):
+            self.guard.verify(PIN)
+
+    def test_lockout_persists_in_a_new_process(self):
+        self.configure()
+        for _ in range(5):
+            self.assertFalse(self.guard.verify('bad'))
+        script = """\
+import sys
+from study_guard import StudyGuard
+for now in (29.99, 30):
+    guard = StudyGuard(sys.argv[1], lambda: now)
+    try:
+        print(guard.verify(sys.argv[2]))
+    except ValueError:
+        print('blocked')
+"""
+        child = subprocess.run(
+            [sys.executable, '-B', '-c', script, str(self.root), PIN],
+            cwd=Path(study_guard.__file__).resolve().parent,
+            capture_output=True, text=True, timeout=10, check=True,
+        )
+        self.assertEqual(child.stdout.splitlines(), ['blocked', 'True'])
+        self.clock.now = 30
+        self.assertTrue(self.guard.verify(PIN))
+
+    def test_corrupt_attempt_state_fails_closed_before_hashing(self):
+        self.configure()
+        valid = {'version': 1, 'failures': 1, 'blocked_until': 0}
+        invalid = [
+            {'version': True}, {'failures': True}, {'failures': -1}, {'failures': 6},
+            {'blocked_until': True}, {'blocked_until': float('nan')},
+            {'blocked_until': -1}, {'blocked_until': 30}, {'failures': 5},
+            {'extra': 0},
+        ]
+        bad_states = [json.dumps({**valid, **patch}) for patch in invalid]
+        bad_states += ['null', '{', ' ' * 2049]
+        with mock.patch('study_guard.hashlib.pbkdf2_hmac') as derive:
+            for value in bad_states:
+                with self.subTest(value=value):
+                    self.guard.attempts_path.write_text(value, encoding='utf-8')
+                    with self.assertRaises(ValueError):
+                        self.guard.verify(PIN)
+            derive.assert_not_called()
+
+    def test_attempt_write_failure_keeps_previous_budget(self):
+        self.configure()
+        for _ in range(4):
+            self.assertFalse(self.guard.verify('bad'))
+        previous = self.guard.attempts_path.read_bytes()
+        with mock.patch('study_guard.os.replace', side_effect=OSError('synthetic')):
+            with self.assertRaises(OSError):
+                self.guard.verify('bad')
+        self.assertEqual(self.guard.attempts_path.read_bytes(), previous)
+        self.assertEqual(list(self.root.glob('.parent-pin-*.tmp')), [])
+        other = StudyGuard(self.root, self.clock)
+        self.assertFalse(other.verify('bad'))
+        with self.assertRaises(ValueError):
+            other.verify(PIN)
 
     def test_corrupt_schema_or_excessive_work_factor_fails_closed(self):
         self.configure()

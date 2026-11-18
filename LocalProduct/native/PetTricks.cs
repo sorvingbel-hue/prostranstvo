@@ -166,10 +166,17 @@ namespace ProstranstvoPet {
     if(Double.IsNaN(mono)||Double.IsInfinity(mono)||mono<0||utc<=0||(last>=0&&mono<last))throw new InvalidDataException();last=mono;
     string body=TrickFiles.Read(path,2048);if(body==null){id=source=null;return false;}
     Dictionary<string,object> value=TrickCodec.Object(body);TrickCodec.Keys(value,"version","session_id","expires_utc","duration_seconds");TrickCodec.Integer(value["version"],1,1);
-    string nextId=TrickCodec.Identifier(value["session_id"]);int duration=TrickCodec.Integer(value["duration_seconds"],60,14400);object raw=value["expires_utc"];
-    if(!(raw is int)&&!(raw is long)&&!(raw is double)&&!(raw is decimal))throw new InvalidDataException();double expiry=Convert.ToDouble(raw,CultureInfo.InvariantCulture);
-    if(Double.IsNaN(expiry)||Double.IsInfinity(expiry)||expiry<=0)throw new InvalidDataException();
-    string canonical=TrickCodec.Json(value);double remaining=Math.Min(duration,Math.Max(0,expiry-utc));
+    string nextId=TrickCodec.Identifier(value["session_id"]);int duration=TrickCodec.Integer(value["duration_seconds"],0,14400);object raw=value["expires_utc"];
+    double remaining;
+    if(duration==0&&raw==null) {
+     remaining=Double.PositiveInfinity;
+    } else {
+     if(duration<60||(!(raw is int)&&!(raw is long)&&!(raw is double)&&!(raw is decimal)))throw new InvalidDataException();
+     double expiry=Convert.ToDouble(raw,CultureInfo.InvariantCulture);
+     if(Double.IsNaN(expiry)||Double.IsInfinity(expiry)||expiry<=0)throw new InvalidDataException();
+     remaining=Math.Min(duration,Math.Max(0,expiry-utc));
+    }
+    string canonical=TrickCodec.Json(value);
     if(id!=nextId){id=nextId;source=canonical;deadline=mono+remaining;}else if(source!=canonical)throw new InvalidDataException();
     deadline=Math.Min(deadline,mono+remaining);return deadline>mono;
    }catch{return true;}
@@ -276,6 +283,10 @@ namespace ProstranstvoPet {
    string directory=Path.Combine(Path.GetTempPath(),"ProstranstvoPetTricksTest-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(directory);
    try {
     string lease=Path.Combine(directory,"study.json");long utc=1000000000;
+    TrickStudyGate indefinite=new TrickStudyGate();
+    TrickFiles.Write(lease,new{version=1,session_id=ID('a'),expires_utc=(object)null,duration_seconds=0});
+    Check(indefinite.Blocked(lease,0,utc));Check(indefinite.Blocked(lease,86400,utc+86400));
+    File.Delete(lease);Check(!indefinite.Blocked(lease,86401,utc+86401));
     // The first editor save may immediately queue a preview between two polls.
     // Missing rules are valid and inert; each poll reloads rules before command.
     TricksHost firstStart=new TricksHost(directory,lease);firstStart.Advance(0,utc,false);

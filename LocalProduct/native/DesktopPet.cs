@@ -114,21 +114,30 @@ namespace ProstranstvoPet {
   float ClampX(float value) { return Math.Max(Left,Math.Min(Right,value)); }
   float ClampY(float value) { return Math.Max(Area.Top,Math.Min(Floor,value)); }
   public void ClampPosition() { X=ClampX(X);Y=ClampY(Y);TargetX=ClampX(TargetX);TargetY=ClampY(TargetY); }
-  public void SetArea(Rectangle value) { Area=value;ClampPosition(); }
+  public void SetArea(Rectangle value) {
+   Area=value;
+   if(Mode==PetMode.Quiet)AnchorQuiet();
+   else ClampPosition();
+  }
   public void SetSize(int width,int height) {
    if(width<1||height<1||width>1024||height>1200)throw new ArgumentOutOfRangeException();
    float center=X+Width/2f,bottom=Y+Height;
    Width=width;Height=height;X=TargetX=center-width/2f;Y=TargetY=bottom-height;
    Stage=PetStage.Idle;PerchId=0;Wait=3;ClampPosition();
-   if(Mode==PetMode.Quiet||Fullscreen)Park();
+   if(Mode==PetMode.Quiet)AnchorQuiet();
+   else if(Fullscreen)Park();
   }
   public void Place(float x,float y) { X=TargetX=ClampX(x);Y=TargetY=ClampY(y);Stage=PetStage.Idle;PerchId=0;Wait=4; }
   public void SetMode(PetMode mode) {
    Mode=mode;PerchId=0;Wait=3;
-   if(mode==PetMode.Quiet) Park();
+   if(mode==PetMode.Quiet) AnchorQuiet();
    else { Stage=PetStage.Idle;TargetX=X;TargetY=Y; }
   }
   void Park() { Stage=PetStage.Park;PerchId=0;TargetX=Right;TargetY=Floor; }
+  void AnchorQuiet() {
+   Park();
+   X=TargetX;Y=TargetY;
+  }
   public static bool IsFullscreen(Rectangle screen,Rectangle window,bool visible,bool own) {
    return visible&&!own&&window.Width>0&&window.Height>0&&window.Left<=screen.Left+2&&window.Top<=screen.Top+2&&window.Right>=screen.Right-2&&window.Bottom>=screen.Bottom-2;
   }
@@ -144,11 +153,16 @@ namespace ProstranstvoPet {
   void PerchTarget(Surface surface) { TargetX=ClampX(surface.Bounds.Left-Width*.55f);TargetY=ClampY(surface.Bounds.Top-Height+22*Width/140f); }
   public void Step(float elapsed,IList<Surface> surfaces,bool fullscreen) {
    if(Single.IsNaN(elapsed)||Single.IsInfinity(elapsed)||elapsed<=0)return;
+   if(Mode==PetMode.Quiet) {
+    Fullscreen=fullscreen;
+    AnchorQuiet();
+    return;
+   }
    float dt=Math.Min(.06f,elapsed);
    if(fullscreen&&!Fullscreen)Park();
    if(!fullscreen&&Fullscreen) { Stage=PetStage.Idle;TargetX=X;TargetY=Y;Wait=3; }
    Fullscreen=fullscreen;
-   if(fullscreen||Mode==PetMode.Quiet) {
+   if(fullscreen) {
     if(Stage!=PetStage.Park)Park();
    } else if(Mode==PetMode.Calm) { TargetX=X;TargetY=Y;Stage=PetStage.Idle;return; }
    Surface current=null;
@@ -467,6 +481,7 @@ namespace ProstranstvoPet {
   public PetWindow(string asset,EventWaitHandle signal,bool diagnosticMode) {
    diagnostic=diagnosticMode;sprites=new Sprites(asset);showEvent=signal;
    motion=new Motion(Screen.PrimaryScreen.WorkingArea,PetWidth,PetHeight,Environment.TickCount);
+   motion.SetMode(PetMode.Quiet);
    atmosphere=PetAmbience.ReadClock(delegate{return DateTime.Now;});motion.NightRest=atmosphere.NightRest;
    FormBorderStyle=FormBorderStyle.None;ShowInTaskbar=diagnostic;TopMost=true;StartPosition=FormStartPosition.Manual;
    Size=new Size(PetWidth,PetHeight);Location=new Point((int)motion.X,(int)motion.Y);Text=diagnostic?"Котёнок · Проверка":"Котёнок · Пространство";
@@ -492,7 +507,13 @@ namespace ProstranstvoPet {
   protected override void OnVisibleChanged(EventArgs e){base.OnVisibleChanged(e);if(!Visible&&ambientWindow!=null&&!ambientWindow.IsDisposed)ambientWindow.Hide();}
   protected override CreateParams CreateParams { get {CreateParams value=base.CreateParams;value.ExStyle|=0x80000|0x08000000;if(diagnostic){value.ExStyle&=~0x80;value.ExStyle|=0x40000;}else value.ExStyle|=0x80;return value;} }
   void AddMode(string title,PetMode value) {
-   ToolStripMenuItem item=new ToolStripMenuItem(title);item.Click+=delegate{StopTrick();CancelPetting();motion.SetMode(value);UpdateModeMenu();};menu.Items.Add(item);modeItems[value]=item;
+   ToolStripMenuItem item=new ToolStripMenuItem(title);
+   item.Click+=delegate {
+    StopTrick();CancelPetting();
+    if(value==PetMode.Quiet)motion.SetArea(Screen.PrimaryScreen.WorkingArea);
+    motion.SetMode(value);UpdateModeMenu();Render();
+   };
+   menu.Items.Add(item);modeItems[value]=item;
   }
   void AddSize(ToolStripMenuItem parent,string title,int width) {
    ToolStripMenuItem item=new ToolStripMenuItem(title);item.Checked=width==spriteWidth;
@@ -542,7 +563,7 @@ namespace ProstranstvoPet {
    if(!dragging){SamplePetting(e.Location);return;}
    Point cursor=Cursor.Position;
    if(Math.Abs(cursor.X-startCursor.X)+Math.Abs(cursor.Y-startCursor.Y)>5)moved=true;
-   if(moved){motion.SetArea(Screen.FromPoint(cursor).WorkingArea);motion.Place(cursor.X-dragOffset.X,cursor.Y-dragOffset.Y);Render();}
+   if(moved&&motion.Mode!=PetMode.Quiet){motion.SetArea(Screen.FromPoint(cursor).WorkingArea);motion.Place(cursor.X-dragOffset.X,cursor.Y-dragOffset.Y);Render();}
   }
   bool BodyAt(Point point) {
    return rendered!=null&&Painter.BodyContains(sprites.Frame(bodyFrame,bodyWidth),point,bodyFacingLeft,bodyMoving,bodyStroking,bodyTime,bodyWidth);
@@ -572,7 +593,7 @@ namespace ProstranstvoPet {
   protected override void OnMouseDoubleClick(MouseEventArgs e){base.OnMouseDoubleClick(e);if(e.Button==MouseButtons.Left&&Painter.ToLogical(e.Location,spriteWidth).Y<138)StartChat();}
   void Tick(object sender,EventArgs args) {
    double now=clock.Elapsed.TotalSeconds;double dt=now-animation;animation=now;
-   if(showEvent.WaitOne(0)){Show();motion.SetMode(PetMode.Calm);heartUntil=now+2;UpdateModeMenu();}
+   if(showEvent.WaitOne(0)){Show();heartUntil=now+2;}
    bool fullscreen=ForegroundFullscreen();
    bool trickBlocked=fullscreen||motion.Mode==PetMode.Quiet||dragging||menu.Visible;
    trickPose=tricks.Advance(now,TrickFiles.UtcNow(),trickBlocked);
@@ -583,7 +604,8 @@ namespace ProstranstvoPet {
    if(!ownBody)CancelPetting();
    if(now>=nextScan) {
     bool firstScan=nextScan==0;
-    surfaces=ReadSurfaces(motion.Area);
+    if(motion.Mode==PetMode.Quiet)motion.SetArea(Screen.PrimaryScreen.WorkingArea);
+    else surfaces=ReadSurfaces(motion.Area);
     // Keep the first scan immediate, then offset it from the tricks file poll.
     nextScan=now+(firstScan?1:2);
    }
@@ -719,7 +741,13 @@ namespace ProstranstvoPet {
    Motion m=new Motion(area,140,163,7);float initial=m.X;
    for(int i=0;i<3000;i++){m.Step(.033f,none,false);Assert(m.X>=m.Left&&m.X<=m.Right&&m.Y>=area.Top&&m.Y<=m.Floor);}
    Assert(Math.Abs(initial-m.X)>5);m.SetMode(PetMode.Calm);float still=m.X;for(int i=0;i<100;i++)m.Step(.033f,none,false);Assert(m.X==still);
-   m.SetMode(PetMode.Quiet);for(int i=0;i<1500;i++)m.Step(.033f,none,false);Assert(Math.Abs(m.X-m.Right)<.1&&m.Stage==PetStage.Park);
+   m.SetMode(PetMode.Quiet);
+   Assert(m.X==m.Right&&m.Y==m.Floor&&m.Stage==PetStage.Park);
+   for(int i=0;i<1500;i++)m.Step(.033f,none,i<750);
+   Assert(m.X==m.Right&&m.Y==m.Floor&&m.Stage==PetStage.Park&&!m.Fullscreen);
+   m.SetArea(new Rectangle(100,40,1200,920));m.SetSize(200,233);
+   Assert(m.X==m.Right&&m.Y==m.Floor&&m.Width==200&&m.Height==233);
+   m.SetArea(area);m.SetSize(140,163);
    m.SetMode(PetMode.Roam);Surface surface=new Surface(10,new Rectangle(240,430,500,270));Assert(m.PlanPerch(surface));
    List<Surface> surfaces=new List<Surface>();surfaces.Add(surface);bool perched=false;
    for(int i=0;i<2500;i++){m.Step(.033f,surfaces,false);if(m.Stage==PetStage.Perch){perched=true;break;}}Assert(perched&&m.Y<m.Floor);
@@ -793,7 +821,7 @@ namespace ProstranstvoPet {
    Assert(nightWalk<dayWalk*.7);
    int ambienceChecks=PetAmbience.SelfTest();
    int trickChecks=PetTrickTests.Run();
-   Console.WriteLine("{\"status\":\"self_test_ok\",\"checks\":"+(33+ambienceChecks+rendererChecks+trickChecks)+",\"ambience_checks\":"+ambienceChecks+",\"renderer_checks\":"+rendererChecks+",\"trick_checks\":"+trickChecks+",\"desktop_mutations\":false,\"network\":false}");return 0;
+   Console.WriteLine("{\"status\":\"self_test_ok\",\"checks\":"+(35+ambienceChecks+rendererChecks+trickChecks)+",\"ambience_checks\":"+ambienceChecks+",\"renderer_checks\":"+rendererChecks+",\"trick_checks\":"+trickChecks+",\"desktop_mutations\":false,\"network\":false}");return 0;
   }
  }
  static class Program {

@@ -1,4 +1,4 @@
-"""Finite local study deadline and its owned current-user Windows startup entry."""
+"""Saved local study session and its current-user Windows startup entry."""
 import json
 import math
 import os
@@ -23,9 +23,13 @@ def _validate(value):
     if not isinstance(value['session_id'], str) or not re.fullmatch(r'[0-9a-f]{32}', value['session_id']):
         raise ValueError('Повреждён идентификатор режима уроков')
     duration = value['duration_seconds']
-    if type(duration) is not int or not 60 <= duration <= 14400:
-        raise ValueError('Повреждена продолжительность уроков')
     expiry = value['expires_utc']
+    if type(duration) is not int or not (duration == 0 or 60 <= duration <= 14400):
+        raise ValueError('Повреждена продолжительность уроков')
+    if duration == 0 and expiry is None:
+        return dict(value)
+    if duration == 0:
+        raise ValueError('Повреждено время окончания уроков')
     if type(expiry) not in (int, float) or not math.isfinite(expiry) or expiry <= 0:
         raise ValueError('Повреждено время окончания уроков')
     return dict(value)
@@ -51,13 +55,14 @@ class StudyResume:
         return _validate(value)
 
     def activate(self, minutes=60):
-        if type(minutes) is not int or not 1 <= minutes <= 240:
-            raise ValueError('Продолжительность должна быть от 1 до 240 минут')
+        if type(minutes) is not int or not 0 <= minutes <= 240:
+            raise ValueError('Выберите «Без таймера» или от 1 до 240 минут')
         now = self.clock()
         if type(now) not in (int, float) or not math.isfinite(now) or now <= 0:
             raise ValueError('Не удалось определить время Windows')
         value = _validate({'version': 1, 'session_id': uuid.uuid4().hex,
-                           'expires_utc': now + minutes * 60, 'duration_seconds': minutes * 60})
+                           'expires_utc': now + minutes * 60 if minutes else None,
+                           'duration_seconds': minutes * 60})
         no_links(self.root)
         self.root.mkdir(parents=True, exist_ok=True)
         no_links(self.root)
@@ -80,6 +85,8 @@ class StudyResume:
         value = self.read() if lease is None else _validate(lease)
         if value is None:
             return 0
+        if value['expires_utc'] is None:
+            return math.inf
         now = self.clock()
         if type(now) not in (int, float) or not math.isfinite(now):
             raise ValueError('Не удалось определить время Windows')

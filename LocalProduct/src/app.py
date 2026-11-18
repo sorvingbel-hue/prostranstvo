@@ -40,6 +40,8 @@ class App(tk.Tk):
   self.dailyplanpanel=DailyPlanPanel(self.dailyplantab,guard=self.studypanel.guard,study=self.studypanel,
       living_society_target=os.environ.get('PROSTRANSTVO_LIVING_SOCIETY_TARGET'))
   self.dailyplanpanel.pack(fill='both',expand=True)
+  self.studypanel.enable_plan_popup(store=self.dailyplanpanel.store,
+      living_society_target=self.dailyplanpanel.living_society_target)
   self.activitypanel=ActivityPanel(self.activitytab);self.activitypanel.pack(fill='both',expand=True)
   self.historypanel=BrowserHistoryPanel(self.historytab);self.historypanel.pack(fill='both',expand=True)
   ttk.Button(self.messagestab,text='Запустить котёнка на рабочем столе',command=self.open_kitten).pack(anchor='w',pady=(0,8))

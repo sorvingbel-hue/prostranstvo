@@ -138,8 +138,8 @@ class DialogueTests(unittest.TestCase):
         self.assertFalse(any('урок' in item['text'] for item in greeting['suggestions']))
 
     def test_family_fact_callback_bounded_and_error_private(self):
-        cat = CatDialogue(corpus=self.corpus, family_reply=lambda text:'Маму зовут Люда.')
-        self.assertEqual(cat.reply('Как зовут мою маму?')['text'], 'Маму зовут Люда.')
+        cat = CatDialogue(corpus=self.corpus, family_reply=lambda text:'Маму зовут Анна.')
+        self.assertEqual(cat.reply('Как зовут мою маму?')['text'], 'Маму зовут Анна.')
         self.assertEqual(cat.last_intent, 'family_fact')
         cat.family_reply = mock.Mock(side_effect=RuntimeError('secret-path-and-token'))
         self.assertNotIn('secret-path', cat.reply('привет')['text'])

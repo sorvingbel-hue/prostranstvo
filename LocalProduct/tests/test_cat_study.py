@@ -68,6 +68,22 @@ class CatStudyTests(unittest.TestCase):
         self.clock.advance(1)
         self.assertEqual(self.monitor.poll()['events'], [])
 
+    def test_indefinite_session_has_one_start_and_no_countdown_until_cleared(self):
+        self.write({'version': 1, 'session_id': 'a' * 32, 'expires_utc': None, 'duration_seconds': 0})
+        started = self.monitor.poll()
+        self.assertTrue(started['status']['active'])
+        self.assertIsNone(started['status']['remaining_seconds'])
+        self.assertEqual([(event['kind'], event['remaining_seconds']) for event in started['events']],
+                         [('study_started', None)])
+        self.clock.advance(86400)
+        later = self.monitor.poll()
+        self.assertTrue(later['status']['active'])
+        self.assertEqual(later['events'], [])
+        self.path.unlink()
+        cleared = self.monitor.poll()
+        self.assertFalse(cleared['status']['active'])
+        self.assertEqual([event['kind'] for event in cleared['events']], ['study_cleared'])
+
     def test_no_end_for_an_expired_session_first_seen(self):
         self.write(self.lease(60))
         self.clock.advance(61)

@@ -77,6 +77,32 @@ class StudyPanelTests(unittest.TestCase):
         self.panel.close()
         self.root.destroy()
 
+    def test_codex_pause_can_be_enabled_by_verified_parent(self):
+        policy = mock.Mock()
+        policy.enabled.return_value = False
+        self.panel.bind_codex_pause(policy)
+        self.panel.codex_pause_enabled.set(True)
+        self.panel._toggle_codex_pause()
+        policy.set_enabled.assert_called_once_with(True)
+
+    def test_codex_pause_cannot_be_disabled_with_wrong_parent_pin(self):
+        policy = mock.Mock()
+        policy.enabled.return_value = True
+        self.panel.bind_codex_pause(policy)
+        self.panel.codex_pause_enabled.set(False)
+        self.dialog.return_value = '000000'
+        self.panel._toggle_codex_pause()
+        policy.set_enabled.assert_not_called()
+        self.assertTrue(self.panel.codex_pause_enabled.get())
+
+    def test_codex_pause_can_be_disabled_by_verified_parent(self):
+        policy = mock.Mock()
+        policy.enabled.return_value = True
+        self.panel.bind_codex_pause(policy)
+        self.panel.codex_pause_enabled.set(False)
+        self.panel._toggle_codex_pause()
+        policy.set_enabled.assert_called_once_with(False)
+
     def test_launch_keeps_session_off(self):
         self.root.update()
         self.assertFalse(self.session.active)
@@ -109,6 +135,20 @@ class StudyPanelTests(unittest.TestCase):
         row = self.panel.windows.item(self.panel.windows.get_children()[0])["values"]
         self.assertEqual(row[-1], "Закрытие запрошено")
         self.assertIn("browser.exe", self.panel.notice.get())
+
+    def test_repeated_game_close_shows_countdown_in_table_and_indicator(self):
+        self.panel.start_lessons()
+        self.panel._indicator_text = tk.StringVar(master=self.root)
+        self.session.pending.append({
+            "window": SimpleNamespace(handle=1, pid=2, executable="RobloxPlayerBeta.exe", title="Roblox"),
+            "remaining_seconds": 4.2, "requested": True, "result": "requested", "retrying": True,
+        })
+        self.panel._refresh()
+        row = self.panel.windows.item(self.panel.windows.get_children()[0])["values"]
+        self.assertEqual(row, ["RobloxPlayerBeta.exe", "Roblox", "Повтор закрытия через 5 с"])
+        self.assertIn("Команда закрытия через 5 с", self.panel._indicator_text.get())
+        self.assertNotIn("вновь открываемых", self.panel._indicator_text.get())
+
 
     def test_failed_close_result_is_not_reported_as_requested(self):
         self.panel.start_lessons()

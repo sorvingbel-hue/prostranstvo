@@ -898,7 +898,12 @@ class KittenMessenger(tk.Tk):
                         study=result.get('study',{})
                         if study.get('active') is True:
                             remaining=study.get('remaining_seconds',0)
-                            self.channel_status.set(self.channel_status.get()+'\nУчебный таймер: ещё '+str(max(1,(int(remaining)+59)//60))+' мин. Папе можно написать.')
+                            if remaining is None:
+                                detail = 'Режим уроков действует до завершения родителем.'
+                            else:
+                                minutes = max(1, (int(remaining) + 59) // 60)
+                                detail = f'Учебный таймер: ещё {minutes} мин.'
+                            self.channel_status.set(self.channel_status.get() + '\n' + detail + ' Папе можно написать.')
                         elif study.get('state')=='unavailable':
                             self.channel_status.set(self.channel_status.get()+'\nСостояние учебного таймера пока проверяется.')
                         for event in result.get('study_events',[]):

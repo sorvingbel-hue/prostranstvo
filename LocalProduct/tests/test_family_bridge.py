@@ -64,14 +64,20 @@ def modules_for(root, legacy=False):
     paths.DEPLOY_ROOT = root / 'legacy-deploy'
     paths.SOURCE_ROOT = paths.APP_ROOT
     source = WORKSPACE / 'WindowsCompanion' if legacy else PRODUCT / 'src'
+    if not source.is_dir():
+        raise RuntimeError('Requested family bridge source tree is not present')
     with mock.patch.dict(sys.modules), mock.patch.object(sys, 'path', [str(source), *sys.path]):
         for name in ('paths', 'family_bridge', 'family_messages', 'family_telegram', 'family_agent'):
             sys.modules.pop(name, None)
         sys.modules['paths'] = paths
-        yield types.SimpleNamespace(paths=paths,
+        modules = types.SimpleNamespace(paths=paths,
             messages=importlib.import_module('family_messages'),
             telegram=importlib.import_module('family_telegram'),
             bridge=importlib.import_module('family_bridge'))
+        for module in (modules.messages, modules.telegram, modules.bridge):
+            if Path(module.__file__).resolve().parent != source.resolve():
+                raise RuntimeError('Family bridge fixture imported a different source tree')
+        yield modules
 
 
 @unittest.skipUnless(os.name == 'nt', 'The transport uses a Windows user mutex')
@@ -121,16 +127,21 @@ class FamilyBridgeTests(unittest.TestCase):
         self.worker.assert_not_called()
 
     def test_default_roots_preserve_beta_and_legacy_locations_without_writes(self):
+        # The portable QA snapshot deliberately omits the personal legacy tree.
+        # Exercise it only in the full workspace; never fall back to beta imports.
         for legacy in (False, True):
-            with self.subTest(legacy=legacy), modules_for(self.root / str(legacy), legacy) as m:
-                bridge = m.bridge.FamilyBridge(ensure_worker=self.worker)
-                self.assertIsNone(bridge._store)
-                self.assertIsNone(bridge._settings)
-                bridge.channel_status()
-                expected = m.paths.DEPLOY_ROOT / 'data' / 'family-messages' if legacy else m.paths.DATA_ROOT / 'family-messages'
-                self.assertEqual(bridge._settings.root, expected.absolute())
-                self.assertEqual(m.messages.default_root(), expected)
-                self.assertFalse(expected.exists())
+            with self.subTest(legacy=legacy):
+                if legacy and not (WORKSPACE / 'WindowsCompanion').is_dir():
+                    self.skipTest('Personal legacy source tree is not included in the portable QA snapshot')
+                with modules_for(self.root / str(legacy), legacy) as m:
+                    bridge = m.bridge.FamilyBridge(ensure_worker=self.worker)
+                    self.assertIsNone(bridge._store)
+                    self.assertIsNone(bridge._settings)
+                    bridge.channel_status()
+                    expected = m.paths.DEPLOY_ROOT / 'data' / 'family-messages' if legacy else m.paths.DATA_ROOT / 'family-messages'
+                    self.assertEqual(bridge._settings.root, expected.absolute())
+                    self.assertEqual(m.messages.default_root(), expected)
+                    self.assertFalse(expected.exists())
 
     def test_paused_channel_does_not_enqueue_or_bind_queue(self):
         bridge = self.ready()

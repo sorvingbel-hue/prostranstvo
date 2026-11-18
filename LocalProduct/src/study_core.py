@@ -1,4 +1,4 @@
-"""Finite, explicitly started study sessions. No persistent activation or process kills."""
+"""Explicitly started study sessions and their window closing grace periods."""
 import json
 import math
 import ntpath
@@ -16,8 +16,8 @@ def executable_key(path):
 
 
 def validate_options(duration_minutes, delay_seconds, allowed_paths):
-    if type(duration_minutes) is not int or not 1 <= duration_minutes <= 240:
-        raise ValueError('Длительность должна быть от 1 до 240 минут')
+    if type(duration_minutes) is not int or not 0 <= duration_minutes <= 240:
+        raise ValueError('Выберите «Без таймера» или от 1 до 240 минут')
     if type(delay_seconds) is not int or delay_seconds not in (5, 10):
         raise ValueError('Задержка должна быть 5 или 10 секунд')
     if not isinstance(allowed_paths, list) or len(allowed_paths) > 100:
@@ -82,13 +82,18 @@ class StudySession:
 
     @property
     def remaining_seconds(self):
-        return max(0, math.ceil(self._end - self.clock())) if self.active else 0
+        if not self.active:
+            return 0
+        if self._end == math.inf:
+            return math.inf
+        return max(0, math.ceil(self._end - self.clock()))
 
     @property
     def pending(self):
         now = self.clock()
         return [{'window': item['window'], 'remaining_seconds': max(0, math.ceil(item['due'] - now)),
-                 'requested': item['attempted'], 'result': item.get('result')} for item in self._windows.values()]
+                 'requested': item['attempted'], 'result': item.get('result'),
+                 'retrying': item['repeat'] and item['attempted']} for item in self._windows.values()]
 
     def start(self, duration_minutes, delay_seconds, preview, allowed_paths):
         value = validate_options(duration_minutes, delay_seconds, allowed_paths)
@@ -98,7 +103,7 @@ class StudySession:
         self._allowed = set(value['allowed_paths'])
         self._delay = delay_seconds
         self.preview = preview
-        self._end = self.clock() + duration_minutes * 60
+        self._end = math.inf if duration_minutes == 0 else self.clock() + duration_minutes * 60
         self._last_tick = self.clock()
         self.active = True
 
@@ -143,31 +148,44 @@ class StudySession:
             return [self._event('expired')]
         if self._last_tick is not None and now - self._last_tick > 2:
             for item in self._windows.values():
-                if not item['attempted']:
+                if not item['attempted'] or item['repeat']:
                     item['due'] = now + self._delay
         self._last_tick = now
         candidates = {w.identity: w for w in windows if executable_key(w.executable) not in self._allowed}
         self._windows = {key: item for key, item in self._windows.items() if key in candidates}
         events = []
         for key, window in candidates.items():
-            item = self._windows.setdefault(key, {'window': window, 'due': now + self._delay, 'attempted': False})
+            repeat = not self.preview and ntpath.basename(executable_key(window.executable)) == 'robloxplayerbeta.exe'
+            item = self._windows.setdefault(key, {
+                'window': window, 'due': now + self._delay, 'attempted': False, 'repeat': repeat,
+            })
             item['window'] = window
-            if item['attempted'] or now < item['due']:
+            item['repeat'] = repeat
+            if (item['attempted'] and not repeat) or now < item['due']:
                 continue
             if self.clock() >= self._end:
                 self.stop()
                 events.append(self._event('expired'))
                 break
-            # One request per window. A save dialog can be completed without a close loop.
+            # Documents receive one request so save dialogs can finish. Roblox
+            # can ignore a close or reopen its existing window between polls.
             item['attempted'] = True
             if self.preview:
                 action = 'preview'
             else:
                 try:
-                    action = self.desktop.close_window(window)
+                    terminate = getattr(self.desktop, 'terminate_roblox', None)
+                    if repeat and item.get('result') == 'requested' and callable(terminate):
+                        action = terminate(window)
+                        if action == 'unavailable':
+                            action = self.desktop.close_window(window)
+                    else:
+                        action = self.desktop.close_window(window)
                 except Exception:
                     self.stop()
                     raise
             item['result'] = action
+            if repeat:
+                item['due'] = self.clock() + self._delay
             events.append(self._event(action, window))
         return events

@@ -1,8 +1,8 @@
 """Read Windows application windows and request their ordinary close action.
 
 The backend works only in the calling process's interactive Windows session.
-It deliberately has no process termination API. Owned dialogs, disabled main
-windows and Windows shell components are excluded from the candidates.
+Owned dialogs, disabled main windows and Windows shell components are excluded.
+The Roblox fallback is restricted to a revalidated game in its installation path.
 """
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ import json
 import ntpath
 import os
 from pathlib import Path
+import re
 
 
 @dataclass(frozen=True)
@@ -46,8 +47,10 @@ PROTECTED_CLASSES = frozenset({
     'Progman', 'WorkerW', 'Shell_TrayWnd', 'Shell_SecondaryTrayWnd',
     'Windows.UI.Core.CoreWindow', 'ApplicationFrameWindow', '#32770',
 })
+PLAN_WINDOW_TITLE = 'Пространство · План на сегодня'
 CONTROL_TITLES = frozenset({
     'Пространство · Уроки', 'Пространство · Время уроков',
+    PLAN_WINDOW_TITLE,
     'Пространство · Помощник компьютера', 'Пространство · Local Beta',
     'Мурчик · Написать папе',
 })
@@ -115,6 +118,7 @@ class WindowsDesktop:
             (self.kernel32.CloseHandle, [wintypes.HANDLE], wintypes.BOOL),
             (self.kernel32.QueryFullProcessImageNameW, [wintypes.HANDLE, wintypes.DWORD, wintypes.LPWSTR, ctypes.POINTER(wintypes.DWORD)], wintypes.BOOL),
             (self.kernel32.GetProcessTimes, [wintypes.HANDLE] + [ctypes.POINTER(wintypes.FILETIME)] * 4, wintypes.BOOL),
+            (self.kernel32.TerminateProcess, [wintypes.HANDLE, wintypes.UINT], wintypes.BOOL),
         )
         for function, arguments, result in functions:
             function.argtypes = arguments
@@ -173,17 +177,32 @@ class WindowsDesktop:
         if not process:
             return None
         try:
-            executable = ctypes.create_unicode_buffer(32768)
-            size = wintypes.DWORD(len(executable))
-            if not self.kernel32.QueryFullProcessImageNameW(process, 0, executable, ctypes.byref(size)):
-                return None
-            started, ended, kernel, user = (wintypes.FILETIME() for _ in range(4))
-            if not self.kernel32.GetProcessTimes(process, ctypes.byref(started), ctypes.byref(ended), ctypes.byref(kernel), ctypes.byref(user)):
-                return None
-            creation_time = (started.dwHighDateTime << 32) | started.dwLowDateTime
-            return executable.value, creation_time
+            return self._process_details(process)
         finally:
             self.kernel32.CloseHandle(process)
+
+    def _process_details(self, process):
+        executable = ctypes.create_unicode_buffer(32768)
+        size = wintypes.DWORD(len(executable))
+        if not self.kernel32.QueryFullProcessImageNameW(process, 0, executable, ctypes.byref(size)):
+            return None
+        started, ended, kernel, user = (wintypes.FILETIME() for _ in range(4))
+        if not self.kernel32.GetProcessTimes(process, ctypes.byref(started), ctypes.byref(ended), ctypes.byref(kernel), ctypes.byref(user)):
+            return None
+        creation_time = (started.dwHighDateTime << 32) | started.dwLowDateTime
+        return executable.value, creation_time
+
+    @staticmethod
+    def _roblox_installation(executable):
+        local = os.environ.get('LOCALAPPDATA', '')
+        if not local or not ntpath.isabs(local):
+            return False
+        path = ntpath.normcase(ntpath.normpath(executable))
+        directory, filename = ntpath.split(path)
+        root, version = ntpath.split(directory)
+        expected = ntpath.normcase(ntpath.normpath(ntpath.join(local, 'Roblox', 'Versions')))
+        return (filename == 'robloxplayerbeta.exe' and root == expected and
+                re.fullmatch(r'version-[0-9a-f]{16,64}', version) is not None)
 
     def _window(self, handle):
         if not self.user32.IsWindow(handle) or not self.user32.IsWindowVisible(handle):
@@ -249,6 +268,42 @@ class WindowsDesktop:
         if self.user32.PostMessageW(window.handle, 0x0010, 0, 0):
             return 'requested'
         return 'unavailable'
+
+    def terminate_roblox(self, window):
+        """End only the exact game after the caller has exhausted close requests."""
+        if not isinstance(window, WindowInfo):
+            raise TypeError('Требуется проверенное окно Windows')
+        if not self.is_interactive_desktop() or not self._roblox_installation(window.executable):
+            return 'unavailable'
+        if not self.user32.IsWindow(window.handle):
+            return 'gone'
+        if self._session(window.pid) != self.session_id:
+            return 'unavailable'
+        current = self._window(window.handle)
+        if current is None:
+            return 'unavailable'
+        if (current.identity != window.identity or
+                ntpath.normcase(current.executable) != ntpath.normcase(window.executable)):
+            return 'changed'
+        # PROCESS_TERMINATE | PROCESS_QUERY_LIMITED_INFORMATION. Keep this handle
+        # from identity verification through termination so a reused PID is safe.
+        process = self.kernel32.OpenProcess(0x1001, False, window.pid)
+        if not process:
+            return 'unavailable'
+        try:
+            details = self._process_details(process)
+            if details is None:
+                return 'unavailable'
+            executable, started = details
+            if (started != window.process_started or
+                    ntpath.normcase(executable) != ntpath.normcase(window.executable) or
+                    not self._roblox_installation(executable)):
+                return 'changed'
+            if self.kernel32.TerminateProcess(process, 0):
+                return 'terminated'
+            return 'unavailable'
+        finally:
+            self.kernel32.CloseHandle(process)
 
 
 if __name__ == '__main__':

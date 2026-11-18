@@ -120,18 +120,31 @@ class StudyResumeTests(unittest.TestCase):
 
     def test_invalid_duration_does_not_replace_existing_lease(self):
         old = self.resume.activate(30)
-        for minutes in (True, 0, 241, 1.5, '60'):
+        for minutes in (True, -1, 241, 1.5, '60'):
             with self.subTest(minutes=minutes):
                 with self.assertRaises(ValueError):
                     self.resume.activate(minutes)
         self.assertEqual(self.resume.read(), old)
+
+    def test_indefinite_session_survives_reopen_and_clears_by_id(self):
+        value = self.resume.activate(0)
+        self.assertIsNone(value['expires_utc'])
+        self.assertEqual(value['duration_seconds'], 0)
+        self.clock.now += 7 * 86400
+        reopened = StudyResume(self.root, self.clock)
+        self.assertEqual(reopened.read(), value)
+        self.assertEqual(reopened.remaining_seconds(), float('inf'))
+        self.assertFalse(reopened.clear('0' * 32))
+        self.assertTrue(reopened.clear(value['session_id']))
+        self.assertEqual(reopened.remaining_seconds(), 0)
 
     def test_malformed_data_is_rejected(self):
         old = self.resume.activate(30)
         invalid = [[], None, {**old, 'version': True}, {**old, 'session_id': 'path'},
                    {**old, 'expires_utc': float('nan')}, {**old, 'expires_utc': float('inf')},
                    {**old, 'expires_utc': True}, {**old, 'duration_seconds': 999999},
-                   {**old, 'duration_seconds': False}, {**old, 'unexpected': 1}]
+                   {**old, 'duration_seconds': False}, {**old, 'unexpected': 1},
+                   {**old, 'duration_seconds': 0}, {**old, 'expires_utc': None}]
         for value in invalid:
             with self.subTest(value=value):
                 self.resume.path.write_text(json.dumps(value), encoding='utf-8')

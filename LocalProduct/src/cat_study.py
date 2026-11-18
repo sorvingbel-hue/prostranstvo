@@ -88,13 +88,19 @@ class CatStudyMonitor:
             if lease is None:
                 return self._base('idle', False, session_id=None, remaining_seconds=0,
                                   expires_utc=None, duration_seconds=0)
-            remaining = min(lease['duration_seconds'], max(0, math.ceil(lease['expires_utc'] - now)))
+            expiry = lease['expires_utc']
+            remaining = None
+            if expiry is not None:
+                remaining = min(lease['duration_seconds'], max(0, math.ceil(expiry - now)))
             if self._lease is None or self._lease['session_id'] != lease['session_id']:
                 self._lease = dict(lease)
-                self._mono_deadline = mono + remaining
+                self._mono_deadline = None if remaining is None else mono + remaining
             elif lease != self._lease:
                 # The owning runtime replaces the ID when extending/restarting.
                 raise ValueError('Same study ID was edited')
+            if remaining is None:
+                return self._base('active', True, session_id=lease['session_id'],
+                                  remaining_seconds=None, expires_utc=None, duration_seconds=0)
             remaining = min(remaining, max(0, math.ceil(self._mono_deadline - mono)))
             if remaining == 0:
                 self._mono_deadline = min(self._mono_deadline, mono)
@@ -125,9 +131,10 @@ class CatStudyMonitor:
             if previous is None or previous['session_id'] != session_id:
                 events.append(self._event('study_started', session_id, remaining,
                               'Сейчас время уроков. Я рядом: можно написать папе.'))
-                if remaining <= FIVE_MINUTES:
+                if remaining is not None and remaining <= FIVE_MINUTES:
                     self._five_sent.add(session_id)
-            elif (previous['state'] == 'active' and previous['remaining_seconds'] > FIVE_MINUTES
+            elif (remaining is not None and previous['state'] == 'active'
+                  and previous['remaining_seconds'] is not None and previous['remaining_seconds'] > FIVE_MINUTES
                   and remaining <= FIVE_MINUTES and session_id not in self._five_sent):
                 events.append(self._event('study_five_minutes', session_id, remaining,
                               'До конца таймера уроков осталось не больше пяти минут.'))
@@ -138,8 +145,10 @@ class CatStudyMonitor:
                               'Время по таймеру уроков истекло. Дальнейший план можно уточнить у родителей.'))
                 self._ended_sent.add(session_id)
         elif state == 'idle' and previous is not None and previous['state'] == 'active':
+            text = ('Сохранённый режим уроков больше не активен.' if previous['remaining_seconds'] is None
+                    else 'Сохранённый таймер уроков завершён или сброшен.')
             events.append(self._event('study_cleared', previous['session_id'], None,
-                          'Сохранённый таймер уроков завершён или сброшен. Если нужно, уточни у родителей.'))
+                          text + ' Если нужно, уточни у родителей.'))
         self._published = dict(status)
         # Only bounded process-local de-duplication; no files are created.
         if len(self._five_sent) > 32:
