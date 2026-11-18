@@ -21,17 +21,20 @@ Some tests intentionally reject invalid command-line inputs and print argparse e
 
 ## Recorded automated run: 17 November 2026
 
-Run from this standalone source snapshot on Windows with Python 3.13:
+Run from this standalone source snapshot on Windows with Python 3.13 and `PROSTRANSTVO_STUDY_DESKTOP_TEST=1` for owned-window integration checks:
 
 | Suite | Tests run | Successful | Skipped | Failures / errors |
 |---|---:|---:|---:|---:|
-| LocalProduct | 737 | 732 | 5 | 0 / 0 |
+| LocalProduct | 749 | 747 | 2 | 0 / 0 |
 | LearningModule | 67 | 66 | 1 | 0 / 0 |
 
-The LocalProduct skips include the intentionally excluded personal legacy source tree. Portable sources are still tested. A fresh clone initially exposed two dispatcher tests requiring an existing build directory and a legacy-path test silently importing portable modules; those fixture defects were fixed before the successful rerun. The legacy-path test also passed separately in the full development workspace.
+The LocalProduct skips include the intentionally excluded personal legacy source tree. Portable sources are still tested. Without the desktop opt-in, three additional native-window fixtures are skipped. The installer lifecycle tests use isolated profiles and synthetic payloads; they do not establish a clean-machine release result.
+
+The Study runtime suite has 45 passing recovery/state tests, including corrupt JSON/schema/UTF-8 and unreadable preferences, an unchanged absolute lease deadline, actual close requests on a synthetic desktop, last-valid allowlist preservation, failure visibility, parent PIN and expired preview status. The finite home-deployment candidate separately passed 44 applicable tests. Runtime data and deployment receipts are excluded from this repository.
 
 ## Priority scenarios
 
+0. **Recovery with corrupt preferences:** a valid active lease must survive malformed JSON, invalid schema, invalid UTF-8 and an unreadable settings.json. Recovery uses the last validated options in that process or explicit defaults (10-second grace, no additional exceptions). Do not overwrite the damaged preferences or extend the lease. Test actual close requests on disposable windows and expiry at the original deadline. With no valid lease, bad settings must not start restrictions. The separate parent status must keep the fallback warning visible through refreshes; a failed recovery must say restrictions are not working and must not be auto-hidden. Inspect the new regression cases in test_study_runtime.py.
 1. **Study and parent approval:** preserve the absolute deadline on restart; approval must stop only the plan's associated session, never a newer session. Check preview mode separately. The source also supports an untimed session, which requires parent approval/PIN to finish.
 2. **PIN throttling:** failed-attempt state must persist across application restarts and be shared by independent processes. Review atomic writes, strict validation, file locking and corruption handling. A PIN in a shared administrator account is not an operating-system security boundary.
 3. **Daily plan:** an existing plan should open once when Study starts/resumes. Closing the plan popup must leave Study active. Confirm a second process cannot spawn duplicate plan windows.
@@ -51,6 +54,7 @@ The LocalProduct skips include the intentionally excluded personal legacy source
 - The displayed play-time reward is not an enforced post-approval game timer.
 - Percentage-based parent scoring, a reward wallet, long-term savings goals, phone apps and a family network are product concepts, not completed features in this snapshot.
 - Full clean-machine installation, real Windows sign-in/recovery and independent live audio/API/Telegram acceptance remain necessary.
+- runtime-status.json is a time-limited snapshot: use state, settings_source, settings_fallback and enforcement_active together with heartbeat_utc. A heartbeat older than valid_for_seconds (5 seconds) is not current confirmation of enforcement. A lease or startup registration alone is not proof the worker is running.
 - Existing review suggestions are hypotheses to verify. In particular, Python WindowsPath equality already handles case-insensitive comparison; reproduce any alleged path-case defect before proposing a fix.
 
 ## Sharing and rights

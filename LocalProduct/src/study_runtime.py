@@ -19,6 +19,7 @@ from tkinter import ttk
 
 from activity_core import no_links
 from codex_pause import CodexPause
+from study_core import validate_options
 from study_guard import StudyGuard
 from study_resume import StudyResume
 from study_ui import StudyPanel
@@ -37,12 +38,20 @@ class PersistentStudyPanel(StudyPanel):
         self._next_health_write = 0
         self._codex_minimized = 0
         self._codex_pause_enabled = False
+        self._runtime_state = 'inactive'
+        self._runtime_error_type = None
+        self._settings_source = 'primary'
+        self._last_valid_settings = None
         super().__init__(parent, settings=settings, session=session, desktop=desktop, guard=guard)
+        self.runtime_status = tk.StringVar()
+        ttk.Label(self, textvariable=self.runtime_status, wraplength=1040,
+                  justify='left').grid(row=10, column=0, sticky='ew', pady=(8, 0))
+        self._update_parent_status()
         self.bind_codex_pause(CodexPause(self.resume_store.root))
         try:
             self._sync_lease()
             if self.session.active:
-                super()._refresh()
+                self._refresh()
                 self._clear_finished_lease()
         except Exception as error:
             self._runtime_error(error)
@@ -51,14 +60,74 @@ class PersistentStudyPanel(StudyPanel):
         self.session.stop()
         self._hide_indicator()
         self._set_controls()
+        if self._lease is not None:
+            self.stop_button.configure(state='normal')
+        self._runtime_state = 'recovery_failed'
+        self._runtime_error_type = type(error).__name__
+        self._update_parent_status()
         self.notice.set('Не удалось восстановить уроки. ' + str(error)[:180])
 
+    def _apply_settings(self, value):
+        if not isinstance(value, dict) or set(value) != {'duration_minutes', 'delay_seconds', 'allowed_paths'}:
+            raise ValueError('Неверные настройки режима уроков')
+        value = validate_options(**value)
+        super()._apply_settings(value)
+        self._last_valid_settings = {**value, 'allowed_paths': list(value['allowed_paths'])}
+
+    def _recovery_settings(self):
+        try:
+            value = self.settings.load()
+            self._apply_settings(value)
+            self._settings_source = 'primary'
+        except (OSError, ValueError):
+            if self._last_valid_settings is not None:
+                value = {**self._last_valid_settings,
+                         'allowed_paths': list(self._last_valid_settings['allowed_paths'])}
+                self._settings_source = 'last_valid'
+            else:
+                value = validate_options(30, 10, [])
+                self._settings_source = 'defaults'
+            # Recovery must never overwrite damaged preferences or a valid lease.
+            # The lease, rather than these UI defaults, supplies the deadline.
+            super()._apply_settings(value)
+        return value
+
+    def _update_parent_status(self):
+        messages = {
+            'inactive': 'Режим не включён. Ограничения не действуют.',
+            'active': 'Активен · ограничения работают.',
+            'restored': 'Восстановлен · ограничения работают. Сохранённый срок не изменён.',
+            'completed': 'Завершён · ограничения отключены.',
+            'preview': 'Пробная проверка · окна не закрываются.',
+            'recovery_failed': ('Не восстановился · ограничения не работают. '
+                                'Сеанс сохранён; повторная проверка выполняется автоматически.'),
+        }
+        text = messages[self._runtime_state]
+        if self.session.active and not self.session.preview:
+            if self._settings_source == 'defaults':
+                text += (' Настройки недоступны: используются запасные параметры — '
+                         'задержка 10 секунд, без добавленных исключений.')
+            elif self._settings_source == 'last_valid':
+                text += ' Настройки недоступны: используются последние проверенные параметры.'
+        self.runtime_status.set(text)
+        if self._runtime_state == 'recovery_failed':
+            self.status.set('Не восстановился')
+        elif self._runtime_state == 'completed':
+            self.status.set('Завершён')
+
+    def _refresh(self):
+        super()._refresh()
+        if self.session.active and self.session.preview:
+            self._runtime_state = 'preview'
+        elif not self.session.active and self._runtime_state in ('active', 'restored', 'preview'):
+            self._runtime_state = 'completed'
+        self._update_parent_status()
+
     def _adopt(self, lease, remaining):
+        self._lease = lease
         if not self.guard.configured():
             raise ValueError('Для восстановления уроков требуется настроенный PIN родителя')
-        value = self.settings.load()
-        self._apply_settings(value)
-        self._lease = lease
+        value = self._recovery_settings()
         untimed = remaining == math.inf
         self.session.start(
             duration_minutes=0 if untimed else max(1, min(240, math.ceil(remaining / 60))),
@@ -70,6 +139,9 @@ class PersistentStudyPanel(StudyPanel):
         self._event_lines.clear()
         self._set_controls()
         self._show_indicator()
+        self._runtime_state = 'restored'
+        self._runtime_error_type = None
+        self._update_parent_status()
         self.notice.set('Уроки включены без таймера.' if untimed else
                         'Режим уроков восстановлен до сохранённого времени окончания.')
 
@@ -79,6 +151,10 @@ class PersistentStudyPanel(StudyPanel):
             if self._lease is not None:
                 self._lease = None
                 super().force_stop()
+                self._runtime_state = 'completed'
+            elif not self.session.active and self._runtime_state == 'recovery_failed':
+                self._runtime_state = 'inactive'
+            self._update_parent_status()
             return
         remaining = self.resume_store.remaining_seconds(lease)
         if remaining <= 0:
@@ -86,7 +162,9 @@ class PersistentStudyPanel(StudyPanel):
             if self._lease is not None:
                 self._lease = None
                 super().force_stop()
-                self.notice.set('Время режима истекло.')
+            self._runtime_state = 'completed'
+            self._update_parent_status()
+            self.notice.set('Время режима истекло.')
             return
         if (self._lease is None or self._lease['session_id'] != lease['session_id']
                 or not self.session.active or self.session.preview):
@@ -103,14 +181,17 @@ class PersistentStudyPanel(StudyPanel):
             # Another controller may have started lessons while the PIN dialog was open.
             self._sync_lease()
             if self.session.active:
-                super()._refresh()
+                self._refresh()
                 self.notice.set('Режим уже включён.')
                 return False
             value = self._save_settings(duration_minutes=duration_minutes)
             self.resume_store.enable_startup()
             lease = self.resume_store.activate(value['duration_minutes'])
             self._adopt(lease, self.resume_store.remaining_seconds(lease))
-            super()._refresh()
+            self._refresh()
+            if self.session.active:
+                self._runtime_state = 'active'
+                self._update_parent_status()
         except Exception as error:
             # Keep a persisted lease on failure so a future startup can recover it.
             self._runtime_error(error)
@@ -146,9 +227,16 @@ class PersistentStudyPanel(StudyPanel):
             'expires_utc': self._lease['expires_utc'] if self._lease else None,
             'observed_windows': len(pending),
             'close_requests': sum(item['result'] == 'requested' for item in pending),
-            'error_type': type(error).__name__ if error else None,
+            'error_type': (type(error).__name__ if error else
+                           self._runtime_error_type if self._runtime_state == 'recovery_failed' else None),
             'codex_pause_enabled': self._codex_pause_enabled,
             'codex_windows_minimized': self._codex_minimized,
+            'state': self._runtime_state,
+            'settings_source': self._settings_source,
+            'settings_fallback': self._settings_source != 'primary',
+            'enforcement_active': (self.session.active and not self.session.preview
+                                   and self._runtime_state in ('active', 'restored')),
+            'valid_for_seconds': 5,
         }
         no_links(self._health_path, self._health_path.exists())
         descriptor, temporary = tempfile.mkstemp(
@@ -183,12 +271,22 @@ class PersistentStudyPanel(StudyPanel):
             self.resume_store.clear(self._lease['session_id'])
             self._lease = None
         super().force_stop()
+        self._runtime_state = 'completed'
+        self._update_parent_status()
+
+    def request_stop(self):
+        if self._lease is not None and not self.session.active:
+            if not self.authorize_parent('Завершить сохранённые уроки'):
+                return False
+        return super().request_stop()
 
     def _clear_finished_lease(self):
         if self._lease is not None and not self.session.active:
             # A monotonic expiry is final even if the Windows clock moved back.
             self.resume_store.clear(self._lease['session_id'])
             self._lease = None
+            self._runtime_state = 'completed'
+            self._update_parent_status()
 
     def _poll(self):
         self._timer = None
@@ -200,7 +298,7 @@ class PersistentStudyPanel(StudyPanel):
             # This also adopts a parent extension when this panel is currently idle.
             self._sync_lease()
             if self.session.active:
-                super()._refresh()
+                self._refresh()
                 self._clear_finished_lease()
             try:
                 paused = self._codex_pause_policy.reconcile(
@@ -350,12 +448,17 @@ def main(argv=None):
             raise ValueError('Сначала задайте PIN родителя в приложении')
         store.enable_startup()
         store.activate(minutes)
-    lease = store.read()
-    if lease is None:
-        return 0
-    if store.remaining_seconds(lease) <= 0:
-        store.clear(lease['session_id'])
-        return 0
+    try:
+        lease = store.read()
+        if lease is None:
+            return 0
+        if store.remaining_seconds(lease) <= 0:
+            store.clear(lease['session_id'])
+            return 0
+    except (OSError, RuntimeError, ValueError):
+        # Open a visible recovery-failure panel instead of silently exiting
+        # pythonw on an unreadable lease. The panel retries without deleting it.
+        pass
     # An explicit extension was persisted above. An existing runtime reads it
     # on its next Tk tick, including when its previous timer already expired.
     with RuntimeLock(store.root) as lock:
@@ -391,7 +494,9 @@ def main(argv=None):
                     shell = None
                 panel.notice.set('Панель остаётся открытой. Не удалось настроить значок и клавиши. '
                                  + str(error)[:180])
-            if args.resume and shell is not None:
+            if (args.resume and shell is not None and panel.session.active
+                    and panel._runtime_state in ('active', 'restored')
+                    and panel._settings_source == 'primary'):
                 shell.hide()
             root.mainloop()
         finally:
