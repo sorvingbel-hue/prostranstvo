@@ -3,6 +3,7 @@ import json,sys
 from engine import Executor
 from version import VERSION
 from agent_apps import TOOLS as APP_TOOLS, TOOL_NAMES as APP_TOOL_NAMES, call as app_call
+from agent_control import TOOLS as CONTROL_TOOLS, TOOL_NAMES as CONTROL_TOOL_NAMES, call as control_call
 sys.stdin.reconfigure(encoding='utf-8');sys.stdout.reconfigure(encoding='utf-8')
 e=Executor()
 TOOLS=[
@@ -22,8 +23,10 @@ def call(name,a):
  if name=='prepare_transfer':return {'job_id':e.plan_transfer(a['sources'],a['destination'],a.get('mode','move'))}
  if name=='prepare_undo':return {'job_id':e.undo(a['job_id'])}
  if name in APP_TOOL_NAMES:return app_call(name,a)
+ if name in CONTROL_TOOL_NAMES:return control_call(name,a)
  raise ValueError('Unknown tool')
 TOOLS += APP_TOOLS
+TOOLS += CONTROL_TOOLS
 for line in sys.stdin:
  request=None
  try:
@@ -36,7 +39,9 @@ for line in sys.stdin:
   elif method=='ping':result={}
   elif method=='tools/list':result={'tools':TOOLS}
   elif method=='tools/call':
-   try:result={'content':[{'type':'text','text':json.dumps(call(request['params']['name'],request['params'].get('arguments',{})),ensure_ascii=False)}]}
+   try:
+    data=call(request['params']['name'],request['params'].get('arguments',{}))
+    result=data if isinstance(data,dict) and data.get('isError') and 'content' in data else {'content':[{'type':'text','text':json.dumps(data,ensure_ascii=False)}]}
    except Exception as err:result={'isError':True,'content':[{'type':'text','text':str(err)}]}
   else:
    print(json.dumps({'jsonrpc':'2.0','id':ident,'error':{'code':-32601,'message':'Method not found'}}),flush=True);continue

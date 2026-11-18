@@ -62,7 +62,7 @@ The Study runtime suite has 45 passing recovery/state tests, including corrupt J
 The repository is public for QA. Public availability is not a grant of a new open-source license. Retain the bundled third-party notices and licenses. Making the repository private later cannot revoke copies that were already downloaded.
 
 
-## Additional launch-tool checks: 18 November 2026
+## Earlier launch-tool checks: 18 November 2026 (163bd57)
 
 - 9 application-launch contract tests, 16 browser-plan/launch contract tests, 6 agent-tool routing tests, and 16 revised executor/protocol regressions passed. This is a focused 47-test run, not a new full-product Windows acceptance run.
 - Executable launches in unit tests use mocks only. Real inventory reads found installed browsers/apps without starting them.
@@ -72,3 +72,18 @@ The repository is public for QA. Public availability is not a grant of a new ope
 - An existing AI-client MCP connection may cache its old tool list/process. Installed source does not prove Dot has reconnected or can use new tools. Test that host separately.
 - A real foreground launch test is pending the user's screen-use window. Existing Facebook login, an authenticated browser action, minimized-window DOM access, and true background operation remain unverified.
 - No fresh installer was built. Previous 17 November full-suite results above remain dated evidence for that source revision.
+
+## Agent controls: later checks, 18 November 2026
+
+This section supersedes the earlier plan-only headless status above.
+
+- **192 focused automated checks passed:** 181 launcher, agent routing, session-lock contracts, parent-app policy, Study runtime/UI, power control/UI and executor/protocol checks; plus 11 headless transport/Node fake-engine checks. No real power command, native input or real GUI fixture was used by these unit suites. The Node fake engine covers redirect aborts before navigation, popup isolation, blank-page adoption, closed/crashed context recovery, setup failures and EOF cleanup. This is not a new full-product acceptance run.
+- The finite home-deployment candidates separately passed 90 applicable policy/runtime/UI checks using the installed finite core/resume modules. These overlap the suites above; do not add them to the count as unique tests.
+- **Real installed stdio/Edge check:** a fresh home server advertised 21 unique tools, returned a power proposal without scheduling anything, opened `https://example.com/` in its own headless Edge profile, returned title/body, read the page again, reported the running controller and closed only that context. Native mouse/keyboard input was not used. Both recorded desktop-state checks were interactive; this does not prove operation while Windows is locked. The page was public; Facebook login and an authenticated action remain unverified.
+- The selected parent apps are filtered out of Study close targets and normally minimized repeatedly. Missing policy is inert; invalid reloads retain the last validated in-process snapshot and report an error. Installed runtime reload retained the exact session ID and absolute deadline, produced a fresh active heartbeat and reported the selected-app count/minimization. This does not make a shared Windows account an access-control boundary.
+- A real foreground Edge launch was also requested during the user's approved screen-use window and its native window was observed. The host then stopped native Computer Use because it could not verify the browser URL. No page control or authenticated action is claimed for that test.
+- `lock_computer` only requests normal Windows locking. A noninteractive desktop was briefly observed after one request, but later checks did not confirm a sustained lock. Command success alone must not be presented as proof the child is locked out.
+- The Power tab requires warning/confirmation and parent PIN, provides a cancellable local countdown and then sends only `/r` or `/s` with `/t 0`, never `/f` or global `/a`. MCP exposes proposal/status only. No real restart/shutdown was executed. Source and frozen dispatch wiring have mock tests; no fresh EXE was built or tested.
+- Headless control requires optional Node.js, installed Edge and a compatible Playwright Core. The development machine has these dependencies; the current installer does not bundle them. The gateway opens a fixed separate profile and fixed HTTPS hosts; it neither imports existing browser cookies nor fills password fields. No network listener is started.
+- Existing connected AI hosts may retain the old MCP tool list. A newly started server passing the check does not establish that Dot's host has reconnected. Keep Facebook ownership with Dot, require an explicit ACK and test its actual tools after reconnecting.
+- See `LocalProduct/docs/AGENT-CONTROL-RU.txt`. Fresh installer, Windows sign-in/reboot, live parent UI, Facebook, Telegram, API and audible voice acceptance remain separate open work.

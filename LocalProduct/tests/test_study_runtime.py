@@ -715,6 +715,137 @@ class PersistentPanelTests(unittest.TestCase):
         self.assertTrue(panel.session.active)
         self.assertIsNotNone(panel._timer)
 
+    def parent_app_fixture(self):
+        parent = WindowInfo(101, 99001, 1, r'C:\Fixture\Parent\msedge.exe',
+                            'Chrome_WidgetWin_1', 'Synthetic parent app')
+        game = WindowInfo(102, 99002, 1, r'C:\Fixture\game.exe',
+                          'FixtureWindow', 'Synthetic game')
+        self.desktop = FixtureDesktop([parent, game])
+        self.session = StudySession(self.desktop, clock=lambda: self.clock.monotonic)
+        lease = self.resume.activate(30)
+        panel = self.create()
+        policy = mock.Mock()
+        policy.snapshot.return_value = {'app_ids': ['edge'],
+                                        'executables': (r'c:\fixture\parent\msedge.exe',)}
+        policy.app_ids.return_value = ['edge']
+        policy._reconcile_approved.return_value = {'enabled': True, 'minimized': 1, 'errors': 0}
+        panel.bind_parent_apps(policy)
+        return panel, policy, lease, parent, game
+
+    def test_parent_apps_minimize_precedes_tick_and_preserves_tasks_while_game_closes(self):
+        panel, policy, lease, parent, game = self.parent_app_fixture()
+        order = []
+        policy._reconcile_approved.side_effect = lambda *args: order.append('minimize') or {
+            'enabled': True, 'minimized': 1, 'errors': 0}
+        original = self.session.tick
+        with mock.patch.object(self.session, 'tick', side_effect=lambda: order.append('tick') or original()):
+            self.tick()
+        self.assertEqual(order, ['minimize', 'tick'])
+        self.assertNotIn(parent, [item['window'] for item in self.session.pending])
+        self.advance_ticks(10)
+        self.assertEqual(self.desktop.closed, [game])
+        self.assertTrue(self.session.active)
+        self.assertEqual(self.resume.read(), lease)
+        self.assertEqual(self.resume.activations, 1)
+
+    def test_parent_policy_error_keeps_last_valid_filter_and_original_deadline(self):
+        panel, policy, lease, parent, game = self.parent_app_fixture()
+        self.tick()
+        deadline = self.session._end
+        policy.snapshot.side_effect = ValueError('mock corrupt parent policy')
+        self.advance_ticks(10)
+        self.assertTrue(panel._parent_apps_error)
+        self.assertEqual(panel._parent_apps_count, 1)
+        self.assertEqual(self.desktop.closed, [game])
+        self.assertEqual(self.session._end, deadline)
+        self.assertEqual(self.resume.read(), lease)
+        self.assertTrue(self.session.active)
+        self.assertIsNotNone(panel._timer)
+
+    def test_parent_minimize_error_keeps_filter_and_other_study_enforcement(self):
+        panel, policy, lease, parent, game = self.parent_app_fixture()
+        policy._reconcile_approved.side_effect = OSError('mock minimizer unavailable')
+        self.advance_ticks(10)
+        self.assertTrue(panel._parent_apps_error)
+        self.assertEqual(self.desktop.closed, [game])
+        self.assertTrue(self.session.active)
+        self.assertEqual(self.resume.read(), lease)
+
+    def test_core_desktop_error_is_not_masked_by_parent_app_proxy(self):
+        panel, policy, lease, parent, game = self.parent_app_fixture()
+        with mock.patch.object(self.desktop, 'list_windows', side_effect=OSError('mock core desktop failure')):
+            self.tick()
+        self.assertFalse(self.session.active)
+        self.assertEqual(panel._runtime_state, 'recovery_failed')
+        self.assertEqual(self.resume.read(), lease)
+        self.assertIsNotNone(panel._timer)
+
+    def test_new_parent_selection_reloads_and_preview_never_filters_parent_windows(self):
+        panel, policy, lease, parent, game = self.parent_app_fixture()
+        self.tick()
+        policy.snapshot.return_value = {'app_ids': [], 'executables': ()}
+        self.tick()
+        self.assertIn(parent, [item['window'] for item in self.session.pending])
+        self.assertEqual(panel._parent_apps_count, 0)
+        self.session.preview = True
+        policy.snapshot.return_value = {'app_ids': ['edge'], 'executables': (r'c:\fixture\parent\msedge.exe',)}
+        # Exercise preview directly: _poll deliberately adopts a saved real
+        # lease again when it encounters an unrelated preview session.
+        panel._refresh()
+        self.assertIn(parent, [item['window'] for item in self.session.pending])
+        self.assertFalse(policy._reconcile_approved.call_args.args[0])
+
+    def test_parent_apps_health_reports_counts_and_errors_without_security_claim(self):
+        panel, policy, lease, parent, game = self.parent_app_fixture()
+        directory = tempfile.TemporaryDirectory(prefix='parent-app-health-')
+        self.addCleanup(directory.cleanup)
+        self.resume.root = Path(directory.name)
+        panel.enable_health_status()
+        self.tick()
+        health = json.loads(panel._health_path.read_text(encoding='utf-8'))
+        self.assertEqual(health['parent_apps_selected_count'], 1)
+        self.assertEqual(health['parent_apps_windows_minimized'], 1)
+        self.assertIs(health['parent_apps_error'], False)
+        self.assertNotIn('secure_lock', health)
+
+    def test_parent_apps_button_requires_pin_and_constructor_opens_no_dialog(self):
+        with mock.patch('study_ui.tk.Toplevel') as create:
+            panel = self.create()
+        create.assert_not_called()
+        self.dialog.return_value = '000000'
+        with mock.patch('study_ui.tk.Toplevel') as create:
+            panel.parent_apps_button.invoke()
+        create.assert_not_called()
+        self.assertIsNone(panel._parent_apps_window)
+
+    def test_parent_apps_settings_save_uses_mock_widgets_and_preserves_study_on_error(self):
+        panel, policy, lease, parent, game = self.parent_app_fixture()
+        window, commands, labels = mock.Mock(), {}, []
+        def button(*args, **kwargs):
+            commands[kwargs['text']] = kwargs['command']
+            return mock.Mock()
+        def variable(*args, **kwargs):
+            return types.SimpleNamespace(get=lambda: kwargs['value'])
+        def label(*args, **kwargs):
+            labels.append(kwargs.get('text', ''))
+            return mock.Mock()
+        with mock.patch('study_ui.tk.Toplevel', return_value=window), \
+             mock.patch('study_ui.tk.BooleanVar', side_effect=variable), \
+             mock.patch('study_ui.ttk.Frame'), mock.patch('study_ui.ttk.Label', side_effect=label), \
+             mock.patch('study_ui.ttk.Checkbutton'), mock.patch('study_ui.ttk.Button', side_effect=button):
+            panel.open_parent_apps()
+        self.assertTrue(any('не граница безопасности Windows' in text for text in labels))
+        policy.configure.side_effect = OSError('mock read-only settings')
+        commands['Сохранить']()
+        policy.configure.assert_called_once_with(['edge'])
+        self.assertTrue(self.session.active)
+        self.assertEqual(self.resume.read(), lease)
+        self.assertIn('Не удалось сохранить', panel.notice.get())
+        policy.configure.side_effect = None
+        commands['Сохранить']()
+        window.destroy.assert_called_once()
+        self.assertIsNone(panel._parent_apps_window)
+
 
 class MainTests(unittest.TestCase):
     def setUp(self):

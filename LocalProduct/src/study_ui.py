@@ -48,6 +48,8 @@ class StudyPanel(ttk.Frame):
         self._displayed_rows = None
         self._event_lines = []
         self._codex_pause_policy = None
+        self._parent_apps_policy = None
+        self._parent_apps_window = None
         self.codex_pause_enabled = tk.BooleanVar(value=False)
         self.columnconfigure(0, weight=1)
         self.rowconfigure(6, weight=1)
@@ -154,7 +156,70 @@ class StudyPanel(ttk.Frame):
             command=self._toggle_codex_pause, state="disabled",
         )
         self.codex_pause_button.grid(row=9, column=0, sticky="w", pady=(6, 0))
+        self.parent_apps_button = ttk.Button(
+            self, text="Приложения родителя в фоне", command=self.open_parent_apps,
+            state="disabled",
+        )
+        self.parent_apps_button.grid(row=9, column=0, sticky="e", pady=(6, 0))
         self._schedule()
+
+    def bind_parent_apps(self, policy):
+        self._parent_apps_policy = policy
+        self.parent_apps_button.configure(state="normal")
+
+    def open_parent_apps(self):
+        policy = self._parent_apps_policy
+        if policy is None or self.closed:
+            return
+        if not self.authorize_parent("Приложения родителя в фоне"):
+            return
+        try:
+            selected = set(policy.app_ids())
+            if self._parent_apps_window is not None and self._parent_apps_window.winfo_exists():
+                self._parent_apps_window.lift()
+                return
+            window = self._parent_apps_window = tk.Toplevel(self)
+            window.title("Приложения родителя в фоне")
+            window.transient(self.winfo_toplevel())
+            window.resizable(False, False)
+            frame = ttk.Frame(window, padding=16)
+            frame.pack(fill="both", expand=True)
+            ttk.Label(
+                frame, text=("Обычное сворачивание — не граница безопасности Windows.\n"
+                             "Выбранные приложения продолжают работу во время уроков.\n"
+                             "Восстановленное окно может появиться до следующей проверки.\n"
+                             "Для работы браузера без окон используйте отдельный headless-профиль."),
+                wraplength=560, justify="left",
+            ).pack(anchor="w", pady=(0, 12))
+            choices = {}
+            for app_id, label in (("edge", "Microsoft Edge"), ("chrome", "Google Chrome"),
+                                  ("yandex", "Яндекс Браузер"), ("vscode", "Visual Studio Code"),
+                                  ("notion", "Notion")):
+                variable = choices[app_id] = tk.BooleanVar(window, value=app_id in selected)
+                ttk.Checkbutton(frame, text=label, variable=variable).pack(anchor="w", pady=2)
+
+            def dismiss():
+                self._parent_apps_window = None
+                window.destroy()
+
+            def save():
+                try:
+                    policy.configure([app_id for app_id, variable in choices.items() if variable.get()])
+                    self.notice.set("Список приложений родителя сохранён. Во время уроков их окна "
+                                    "сворачиваются, процессы продолжают работу.")
+                    dismiss()
+                except (OSError, RuntimeError, ValueError) as error:
+                    self.notice.set("Не удалось сохранить приложения родителя. " + str(error)[:180])
+
+            actions = ttk.Frame(frame)
+            actions.pack(fill="x", pady=(12, 0))
+            ttk.Button(actions, text="Сохранить", command=save).pack(side="left")
+            ttk.Button(actions, text="Отмена", command=dismiss).pack(side="left", padx=8)
+            window.protocol("WM_DELETE_WINDOW", dismiss)
+            window.bind("<Escape>", lambda event: dismiss())
+            window.grab_set()
+        except (OSError, RuntimeError, ValueError, tk.TclError) as error:
+            self.notice.set("Не удалось открыть приложения родителя. " + str(error)[:180])
 
     def bind_codex_pause(self, policy):
         self._codex_pause_policy = policy
@@ -493,6 +558,9 @@ class StudyPanel(ttk.Frame):
         if self.closed:
             return
         self.closed = True
+        if self._parent_apps_window is not None:
+            self._parent_apps_window.destroy()
+            self._parent_apps_window = None
         if self._timer is not None:
             try:
                 self.after_cancel(self._timer)

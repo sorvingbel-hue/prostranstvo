@@ -14,6 +14,7 @@ from folder_ui import FolderPanel
 from file_audit_ui import FileAuditPanel
 from rules_ui import RulePanel
 from archive_ui import ArchivePanel
+from power_ui import PowerPanel
 LABELS={'queued':'В очереди','needs_approval':'Нужна проверка плана','running':'Выполняется','completed':'Готово','failed':'Ошибка','cancelled':'Отменено','interrupted':'Прервано'}
 class App(tk.Tk):
  def __init__(self):
@@ -35,8 +36,10 @@ class App(tk.Tk):
   self.messagestab=ttk.Frame(self.tabs,padding=10)
   self.studytab=ttk.Frame(self.tabs,padding=10)
   self.dailyplantab=ttk.Frame(self.tabs)
-  for panel,name in [(self.home,'Компьютер'),(self.studytab,'Уроки'),(self.dailyplantab,'План на сегодня'),(self.messagestab,'Общение'),(self.activitytab,'Режим Паши'),(self.historytab,'Сайты и YouTube'),(self.filestab,'Файлы'),(self.searchtab,'Общий каталог'),(self.settingstab,'Подключения')]:self.tabs.add(panel,text=name)
+  self.powertab=ttk.Frame(self.tabs)
+  for panel,name in [(self.home,'Компьютер'),(self.studytab,'Уроки'),(self.dailyplantab,'План на сегодня'),(self.powertab,'Питание'),(self.messagestab,'Общение'),(self.activitytab,'Режим Паши'),(self.historytab,'Сайты и YouTube'),(self.filestab,'Файлы'),(self.searchtab,'Общий каталог'),(self.settingstab,'Подключения')]:self.tabs.add(panel,text=name)
   self.studypanel=StudyPanel(self.studytab);self.studypanel.pack(fill='both',expand=True)
+  self._build_power_panel()
   self.dailyplanpanel=DailyPlanPanel(self.dailyplantab,guard=self.studypanel.guard,study=self.studypanel,
       living_society_target=os.environ.get('PROSTRANSTVO_LIVING_SOCIETY_TARGET'))
   self.dailyplanpanel.pack(fill='both',expand=True)
@@ -86,6 +89,13 @@ class App(tk.Tk):
   if '--messages' in sys.argv:self.tabs.select(self.messagestab)
   self.refresh_home();self.refresh();threading.Thread(target=self.worker,daemon=True).start();self.after(1500,self.tick)
  def report_error(self,e):messagebox.showerror('Операция не выполнена',str(e))
+ def _build_power_panel(self):
+  self.powerpanel=PowerPanel(self.powertab,authorize_parent=self.studypanel.authorize_parent)
+  self.powerpanel.pack(fill='both',expand=True)
+ def destroy(self):
+  panel=getattr(self,'powerpanel',None)
+  if panel is not None:panel.close()
+  super().destroy()
  def open_kitten(self):
   try:
    from desktop_pet import launch

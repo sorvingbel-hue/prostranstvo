@@ -53,8 +53,8 @@ def prepare_uninstall():
     return {'prepared': True, 'data_preserved': str(DATA_ROOT)}
 
 def main():
-    parser = argparse.ArgumentParser(description='Пространство Local Beta')
-    parser.add_argument('mode', choices=('ui', 'messages', 'reply', 'kitten', 'pet', 'activity-agent', 'family-agent', 'history-collect', 'mcp', 'family-mcp', 'study-resume', 'status', 'self-test', 'prepare-uninstall', 'speech-transcribe', 'tricks'))
+    parser = argparse.ArgumentParser(description='Пространство Local Beta', allow_abbrev=False)
+    parser.add_argument('mode', choices=('ui', 'messages', 'reply', 'kitten', 'pet', 'activity-agent', 'family-agent', 'history-collect', 'mcp', 'family-mcp', 'study-resume', 'status', 'self-test', 'prepare-uninstall', 'speech-transcribe', 'tricks', 'power-worker'))
     parser.add_argument('--activity', action='store_true')
     parser.add_argument('--messages', action='store_true')
     parser.add_argument('--setup', action='store_true')
@@ -65,7 +65,18 @@ def main():
     parser.add_argument('--greet', action='store_true')
     parser.add_argument('--open', action='store_true')
     parser.add_argument('--serve-only', action='store_true')
+    parser.add_argument('--request-id')
+    parser.add_argument('--worker-id')
     args = parser.parse_args()
+    if args.mode == 'power-worker':
+        if (not args.request_id or not re.fullmatch(r'[0-9a-f]{32}', args.request_id) or
+                not args.worker_id or not re.fullmatch(r'[0-9a-f]{32}', args.worker_id)):
+            parser.error('Power worker requires exact request and worker IDs')
+        if any((args.activity, args.messages, args.setup, args.background, args.ready_stdout,
+                args.reply_to, args.mini, args.greet, args.open, args.serve_only)):
+            parser.error('Power worker accepts only --request-id and --worker-id')
+    elif args.request_id is not None or args.worker_id is not None:
+        parser.error('Power worker IDs are only supported for power-worker')
     if args.mode != 'tricks' and (args.open or args.serve_only):
         parser.error('Editor arguments are only supported for tricks')
     if args.mode == 'tricks' and any((args.activity, args.messages, args.setup, args.background, args.reply_to, args.mini)):
@@ -84,7 +95,12 @@ def main():
         parser.error('Speech worker accepts no arguments')
     if args.reply_to and not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', args.reply_to):
         parser.error('Invalid reply ID')
-    if args.mode == 'ui':
+    if args.mode == 'power-worker':
+        from power_control import PowerControl
+        value = PowerControl().run_worker(args.request_id, args.worker_id)
+        print(json.dumps(value, ensure_ascii=False))
+        return 0 if value.get('state') in {'dispatched', 'cancelled'} else 1
+    elif args.mode == 'ui':
         with GuiLock() as lock:
             if lock.existed:
                 ctypes.windll.user32.MessageBoxW(None, 'Окно Local Beta уже открыто. Выберите его на панели задач.', 'Пространство Local Beta', 0x40)

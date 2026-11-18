@@ -20,6 +20,7 @@ SOURCES = ['app.py', 'daily_plan.py', 'daily_plan_ui.py', 'daily_plan_animation.
     'cat_speech.py', 'speech_worker.py', 'pet_tricks.py', 'pet_tricks_server.py', 'pet_tricks_launch.py', 'family_messages_ui.py', 'family_startup.py', 'family_bridge.py', 'family_mcp.py', 'mcp_server.py', 'system_broker.py', 'study_core.py', 'study_windows.py', 'study_ui.py', 'study_guard.py', 'study_resume.py', 'study_runtime.py', 'study_shell.py', 'codex_pause.py', 'folder_policy.py', 'folder_ui.py', 'local_rules.py', 'rules_ui.py', 'indexed_archives.py', 'archive_ui.py', 'paths.py', 'local_main.py', 'version.py']
 
 SOURCES += ['application_launcher.py', 'browser_access.py', 'agent_apps.py']
+SOURCES += ['headless_browser.py', 'agent_control.py', 'parent_apps.py', 'session_control.py', 'power_control.py', 'power_ui.py']
 
 def run(args):
     subprocess.run([str(x) for x in args], check=True, cwd=PRODUCT)
@@ -69,6 +70,7 @@ def main():
     compile_cs(native / 'HistorySchedule.cs', stage / 'HistorySchedule.exe', ['Microsoft.CSharp.dll', 'System.Web.Extensions.dll'])
     for name in ['START-HERE-RU.txt', 'CODEX-SETUP-RU.txt', 'PRIVACY-LOCAL.txt', 'CHANGELOG-RU.txt', 'FAMILY-PET-CHAT-RU.txt', 'STUDY-MODE-RU.txt', 'FILES-RULES-ARCHIVES-RU.txt', 'KITTEN-RU.txt', 'KITTEN-TRICKS-RU.txt', 'KITTEN-REUSE-RESEARCH-RU.txt', 'KITTEN-ART-PROMPT.txt', 'KITTEN-ART-V2-PROMPTS.txt', 'OFFLINE-SPEECH-RU.txt', 'CHILD-DIALOGUE-SOURCES-RU.txt', 'CAT-AI-RU.txt']:
         shutil.copy2(PRODUCT / 'docs' / name, stage / name)
+    shutil.copy2(PRODUCT / 'docs' / 'AGENT-CONTROL-RU.txt', stage / 'AGENT-CONTROL-RU.txt')
     licenses = stage / 'licenses'
     licenses.mkdir()
     python_base = Path(sys.base_prefix)
@@ -109,6 +111,7 @@ def main():
     allowed += [x for x in (PRODUCT / 'assets' / 'tricks').glob('*') if x.is_file() and x.suffix in ('.html', '.js', '.css', '.json')]
     allowed += [x for x in (PRODUCT / 'assets' / 'blockly').glob('*') if x.is_file() and x.suffix in ('.json', '.txt', '.md')]
     allowed += [PRODUCT / 'assets' / 'blockly' / 'LICENSE']
+    allowed += list((PRODUCT / 'assets' / 'agent-browser').glob('*.mjs'))
     with zipfile.ZipFile(source_zip, 'w', zipfile.ZIP_DEFLATED) as archive:
         for file in sorted(set(allowed)):
             archive.write(file, file.relative_to(PRODUCT).as_posix())

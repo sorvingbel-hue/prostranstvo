@@ -19,6 +19,7 @@ from tkinter import ttk
 
 from activity_core import no_links
 from codex_pause import CodexPause
+from parent_apps import ParentApps, ParentAppsDesktop
 from study_core import validate_options
 from study_guard import StudyGuard
 from study_resume import StudyResume
@@ -38,6 +39,10 @@ class PersistentStudyPanel(StudyPanel):
         self._next_health_write = 0
         self._codex_minimized = 0
         self._codex_pause_enabled = False
+        self._parent_apps_count = 0
+        self._parent_apps_minimized = 0
+        self._parent_apps_error = False
+        self._parent_apps_desktop = None
         self._runtime_state = 'inactive'
         self._runtime_error_type = None
         self._settings_source = 'primary'
@@ -48,6 +53,7 @@ class PersistentStudyPanel(StudyPanel):
                   justify='left').grid(row=10, column=0, sticky='ew', pady=(8, 0))
         self._update_parent_status()
         self.bind_codex_pause(CodexPause(self.resume_store.root))
+        self.bind_parent_apps(ParentApps(self.resume_store.root, desktop=self.session.desktop))
         try:
             self._sync_lease()
             if self.session.active:
@@ -116,12 +122,47 @@ class PersistentStudyPanel(StudyPanel):
             self.status.set('Завершён')
 
     def _refresh(self):
+        # The snapshot must filter and minimize parent apps before tick() can
+        # issue any ordinary window-close request, including the first restore.
+        self._reconcile_parent_apps()
         super()._refresh()
         if self.session.active and self.session.preview:
             self._runtime_state = 'preview'
         elif not self.session.active and self._runtime_state in ('active', 'restored', 'preview'):
             self._runtime_state = 'completed'
         self._update_parent_status()
+
+    def bind_parent_apps(self, policy):
+        super().bind_parent_apps(policy)
+        previous = self._parent_apps_desktop
+        desktop = previous._desktop if previous is not None else self.session.desktop
+        while isinstance(desktop, ParentAppsDesktop):
+            desktop = desktop._desktop
+        self._parent_apps_desktop = ParentAppsDesktop(desktop, policy, active=self._parent_apps_active)
+        self.session.desktop = self._parent_apps_desktop
+
+    def _parent_apps_active(self):
+        return bool(self.session.active and not self.session.preview and self.session.remaining_seconds > 0)
+
+    def _reconcile_parent_apps(self):
+        proxy = self._parent_apps_desktop
+        if proxy is None:
+            return
+        self._parent_apps_error = False
+        try:
+            proxy.refresh_policy()
+        except (OSError, RuntimeError, ValueError) as error:
+            self._parent_apps_error = True
+            self.notice.set('Не удалось перечитать приложения родителя. '
+                            'Сохранён последний проверенный список. ' + str(error)[:140])
+        self._parent_apps_count = proxy.selected_count
+        try:
+            result = proxy.reconcile(active=self._parent_apps_active())
+            self._parent_apps_minimized += result['minimized']
+            self._parent_apps_error = self._parent_apps_error or bool(result['errors'])
+        except (OSError, RuntimeError, ValueError) as error:
+            self._parent_apps_error = True
+            self.notice.set('Не удалось свернуть приложения родителя. ' + str(error)[:180])
 
     def _adopt(self, lease, remaining):
         self._lease = lease
@@ -231,6 +272,9 @@ class PersistentStudyPanel(StudyPanel):
                            self._runtime_error_type if self._runtime_state == 'recovery_failed' else None),
             'codex_pause_enabled': self._codex_pause_enabled,
             'codex_windows_minimized': self._codex_minimized,
+            'parent_apps_selected_count': self._parent_apps_count,
+            'parent_apps_windows_minimized': self._parent_apps_minimized,
+            'parent_apps_error': self._parent_apps_error,
             'state': self._runtime_state,
             'settings_source': self._settings_source,
             'settings_fallback': self._settings_source != 'primary',
