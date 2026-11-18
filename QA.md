@@ -60,3 +60,15 @@ The Study runtime suite has 45 passing recovery/state tests, including corrupt J
 ## Sharing and rights
 
 The repository is public for QA. Public availability is not a grant of a new open-source license. Retain the bundled third-party notices and licenses. Making the repository private later cannot revoke copies that were already downloaded.
+
+
+## Additional launch-tool checks: 18 November 2026
+
+- 9 application-launch contract tests, 16 browser-plan/launch contract tests, 6 agent-tool routing tests, and 16 revised executor/protocol regressions passed. This is a focused 47-test run, not a new full-product Windows acceptance run.
+- Executable launches in unit tests use mocks only. Real inventory reads found installed browsers/apps without starting them.
+- The installed home stdio server was separately exercised with initialize, tools/list, inventory, a default-denied app launch and a headless plan. All four new tool names were present; no browser or desktop app was started. This verifies protocol wiring and the screen guard, not a successful foreground launch or browser control.
+- New tools: agent_apps_status, prepare_app_launch, launch_agent_app, prepare_browser_background. Launches are restricted to the known catalog, with no arbitrary shell or executable argument. Foreground permission must come from the user's explicit screen-use approval for that request; the boolean is not an OS security boundary.
+- Headless control is a configuration plan only. The official Playwright MCP dependency/client connection is required; the plan never installs it automatically, never starts a network listener and never imports personal cookies.
+- An existing AI-client MCP connection may cache its old tool list/process. Installed source does not prove Dot has reconnected or can use new tools. Test that host separately.
+- A real foreground launch test is pending the user's screen-use window. Existing Facebook login, an authenticated browser action, minimized-window DOM access, and true background operation remain unverified.
+- No fresh installer was built. Previous 17 November full-suite results above remain dated evidence for that source revision.

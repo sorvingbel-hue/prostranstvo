@@ -273,17 +273,35 @@ runpy.run_path(str(Path(sys.argv[1])/'mcp_server.py'),run_name='__main__')
             {'jsonrpc': '2.0', 'method': 'notifications/initialized'},
             {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/list'},
             {'jsonrpc': '2.0', 'id': 3, 'method': 'tools/call', 'params': {'name': 'prepare_transfer', 'arguments': {'sources': [str(self.root / 'outside.txt')], 'destination': str(self.dst)}}},
+            {'jsonrpc': '2.0', 'id': 4, 'method': 'tools/call', 'params': {'name': 'agent_apps_status', 'arguments': {}}},
+            {'jsonrpc': '2.0', 'id': 5, 'method': 'tools/call', 'params': {'name': 'launch_agent_app', 'arguments': {'app': 'notepad'}}},
+            {'jsonrpc': '2.0', 'id': 6, 'method': 'tools/call', 'params': {'name': 'prepare_browser_background', 'arguments': {'browser': 'edge', 'url': 'https://example.test/'}}},
         ]
         env = dict(os.environ, LOCALAPPDATA=str(self.root / 'child-local-profile'), PYTHONPATH='', PYTHONHOME='')
         child = subprocess.run([sys.executable, '-B', '-c', bootstrap, str(PRODUCT / 'src'), str(config)],
                                input='\n'.join(json.dumps(x) for x in requests) + '\n',
-                               text=True, encoding='utf-8', capture_output=True, env=env, timeout=20)
+                               text=True, encoding='utf-8', capture_output=True, env=env, timeout=20,
+                               creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         self.assertEqual(child.returncode, 0, child.stderr)
         self.assertFalse(child.stderr)
         responses = [json.loads(line) for line in child.stdout.splitlines()]
-        self.assertEqual([row['id'] for row in responses], [1, 2, 3])
-        self.assertEqual(len(responses[1]['result']['tools']), 7)
+        self.assertEqual([row['id'] for row in responses], [1, 2, 3, 4, 5, 6])
+        tools = {item['name'] for item in responses[1]['result']['tools']}
+        self.assertEqual(tools, {'computer_status', 'catalog_search', 'list_jobs', 'queue_inventory',
+                                'queue_duplicates', 'prepare_transfer', 'prepare_undo',
+                                'agent_apps_status', 'prepare_app_launch', 'launch_agent_app',
+                                'prepare_browser_background'})
         self.assertTrue(responses[2]['result']['isError'])
+        app_status = json.loads(responses[3]['result']['content'][0]['text'])
+        self.assertTrue(app_status['this_call_starts_nothing'])
+        self.assertFalse(app_status['existing_session_control_verified'])
+        launch = json.loads(responses[4]['result']['content'][0]['text'])
+        self.assertEqual(launch['status'], 'blocked')
+        self.assertFalse(launch['started_anything'])
+        background = json.loads(responses[5]['result']['content'][0]['text'])
+        self.assertEqual(background['runtime_status'], 'planned_not_started')
+        self.assertFalse(background['process_started'])
+        self.assertFalse(background['controllable'])
         self.assertTrue((self.paths.EXECUTOR_DATA / 'queue.sqlite').is_file())
         self.assertFalse((self.root / 'child-local-profile').exists())
 

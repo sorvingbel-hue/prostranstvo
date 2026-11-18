@@ -19,6 +19,8 @@ SOURCES = ['app.py', 'daily_plan.py', 'daily_plan_ui.py', 'daily_plan_animation.
     'history_schedule.py', 'family_messages.py', 'family_telegram.py', 'family_agent.py', 'desktop_pet.py', 'kitten_messenger.py', 'cat_dialogue.py', 'cat_study.py', 'cat_api.py', 'cat_brain.py', 'cat_knowledge.py', 'cat_ai_ui.py', 'family_context.py', 'family_context_ui.py', 'cat_voice.py',
     'cat_speech.py', 'speech_worker.py', 'pet_tricks.py', 'pet_tricks_server.py', 'pet_tricks_launch.py', 'family_messages_ui.py', 'family_startup.py', 'family_bridge.py', 'family_mcp.py', 'mcp_server.py', 'system_broker.py', 'study_core.py', 'study_windows.py', 'study_ui.py', 'study_guard.py', 'study_resume.py', 'study_runtime.py', 'study_shell.py', 'codex_pause.py', 'folder_policy.py', 'folder_ui.py', 'local_rules.py', 'rules_ui.py', 'indexed_archives.py', 'archive_ui.py', 'paths.py', 'local_main.py', 'version.py']
 
+SOURCES += ['application_launcher.py', 'browser_access.py', 'agent_apps.py']
+
 def run(args):
     subprocess.run([str(x) for x in args], check=True, cwd=PRODUCT)
 

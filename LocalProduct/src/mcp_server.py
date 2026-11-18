@@ -2,6 +2,7 @@
 import json,sys
 from engine import Executor
 from version import VERSION
+from agent_apps import TOOLS as APP_TOOLS, TOOL_NAMES as APP_TOOL_NAMES, call as app_call
 sys.stdin.reconfigure(encoding='utf-8');sys.stdout.reconfigure(encoding='utf-8')
 e=Executor()
 TOOLS=[
@@ -20,7 +21,9 @@ def call(name,a):
   root=str(e.checked(a['root'],True));return {'job_id':e.create('inventory' if name=='queue_inventory' else 'duplicates',{'root':root})}
  if name=='prepare_transfer':return {'job_id':e.plan_transfer(a['sources'],a['destination'],a.get('mode','move'))}
  if name=='prepare_undo':return {'job_id':e.undo(a['job_id'])}
+ if name in APP_TOOL_NAMES:return app_call(name,a)
  raise ValueError('Unknown tool')
+TOOLS += APP_TOOLS
 for line in sys.stdin:
  request=None
  try:
