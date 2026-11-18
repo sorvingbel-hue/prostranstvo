@@ -15,6 +15,7 @@ from file_audit_ui import FileAuditPanel
 from rules_ui import RulePanel
 from archive_ui import ArchivePanel
 from power_ui import PowerPanel
+from browser_login_ui import BrowserLoginPanel
 LABELS={'queued':'В очереди','needs_approval':'Нужна проверка плана','running':'Выполняется','completed':'Готово','failed':'Ошибка','cancelled':'Отменено','interrupted':'Прервано'}
 class App(tk.Tk):
  def __init__(self):
@@ -78,6 +79,7 @@ class App(tk.Tk):
    'в пакет не входят. Установщик не включает запись, сбор истории, Telegram или автозапуск.\n'
    'Общий каталог необязателен: чужие индексы и личные данные в пакет не включаются. '
    'Без каталога доступны обследование папок, поиск дублей и проверяемые планы переноса.')
+  self._build_browser_login_panel()
   ttk.Label(self.settingstab,text=connectionText,wraplength=900,justify='left').pack(anchor='w')
   ttk.Button(self.settingstab,text='Открыть папку программы',command=lambda:os.startfile(str(APP_ROOT))).pack(anchor='w',pady=16)
   ttk.Button(self.settingstab,text='Открыть локальные данные',command=lambda:os.startfile(str(DATA_ROOT))).pack(anchor='w')
@@ -92,9 +94,14 @@ class App(tk.Tk):
  def _build_power_panel(self):
   self.powerpanel=PowerPanel(self.powertab,authorize_parent=self.studypanel.authorize_parent)
   self.powerpanel.pack(fill='both',expand=True)
+ def _build_browser_login_panel(self):
+  self.browserloginpanel=BrowserLoginPanel(self.settingstab,authorize_parent=self.studypanel.authorize_parent)
+  self.browserloginpanel.pack(fill='x',pady=(0,12))
  def destroy(self):
-  panel=getattr(self,'powerpanel',None)
+  panel=self.__dict__.get('powerpanel')
   if panel is not None:panel.close()
+  loginpanel=self.__dict__.get('browserloginpanel')
+  if loginpanel is not None:loginpanel.close()
   super().destroy()
  def open_kitten(self):
   try:

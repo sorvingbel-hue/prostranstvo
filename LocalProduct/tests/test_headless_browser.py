@@ -5,6 +5,7 @@ from pathlib import Path
 import queue
 import sys
 import tempfile
+import threading
 import unittest
 from unittest.mock import Mock, patch
 
@@ -24,13 +25,14 @@ class FakeOutput:
 
 
 class FakeProcess:
-    def __init__(self, stall=False):
+    def __init__(self, stall=False, close_errors=0):
         self.stdout = FakeOutput()
         self.stdin = Mock()
         self.stdin.write.side_effect = self.write
         self.returncode = None
         self.requests = []
         self.stall = stall
+        self.close_errors = close_errors
 
     def write(self, line):
         request = json.loads(line)
@@ -44,9 +46,15 @@ class FakeProcess:
         else:
             name = request['params']['name']
             data = {'tool': name, 'browser_started': name != 'agent_browser_close'}
+            if name == 'agent_browser_close':
+                data['status'] = 'owned_browser_closed'
             result = {'content': [{'type': 'text', 'text': json.dumps(data)}]}
             if name == 'agent_browser_click':
                 result['isError'] = True
+            if name == 'agent_browser_close' and self.close_errors:
+                self.close_errors -= 1
+                result = {'isError': True, 'content': [
+                    {'type': 'text', 'text': json.dumps({'error': 'fixture_close_failed'})}]}
         self.stdout.lines.put(json.dumps({'jsonrpc': '2.0', 'id': request['id'], 'result': result}))
 
     def poll(self):
@@ -166,6 +174,98 @@ class HeadlessBrowserTests(unittest.TestCase):
         for process in self.processes:
             opens = [r for r in process.requests if r.get('params', {}).get('name') == 'agent_browser_open']
             self.assertEqual(len(opens), 1)
+
+    def test_failed_close_keeps_transport_for_status_and_explicit_retry(self):
+        process = FakeProcess(close_errors=1)
+        self.spawn.side_effect = [process]
+        self.client.call('agent_browser_open', {'url': 'https://example.com'})
+        failed = self.client.call('agent_browser_close', {})
+        self.assertTrue(failed['isError'])
+        self.assertNotIn('closed', failed)
+        self.assertIs(self.client._process, process)
+        self.assertIsNone(process.returncode)
+        self.assertTrue(self.client.call('agent_browser_status')['browser_started'])
+        self.assertEqual(self.spawn.call_count, 1)
+        succeeded = self.client.call('agent_browser_close', {})
+        self.assertFalse(succeeded['browser_started'])
+        self.assertIsNone(self.client._process)
+        self.assertIsNotNone(process.returncode)
+        names = [r['params']['name'] for r in process.requests if r['method'] == 'tools/call']
+        self.assertEqual(names[-3:], ['agent_browser_close', 'agent_browser_status', 'agent_browser_close'])
+
+    def test_service_close_reaps_transport_after_failed_rpc_without_claiming_success(self):
+        process = FakeProcess(close_errors=1)
+        self.spawn.side_effect = [process]
+        self.client.call('agent_browser_open', {'url': 'https://example.com'})
+        self.assertIsNone(self.client.close())
+        self.assertIsNone(self.client._process)
+        self.assertIsNotNone(process.returncode)
+        self.assertEqual(process.requests[-1]['params']['name'], 'agent_browser_close')
+        self.assertIsNone(self.client.close())
+        self.assertEqual(self.spawn.call_count, 1)
+
+    def test_manual_login_gate_reports_pending_and_blocks_before_spawn(self):
+        with patch.object(browser, 'manual_login_pending', return_value=True):
+            status = self.client.call('agent_browser_status')
+            self.assertTrue(status['manual_login_pending'])
+            with self.assertRaisesRegex(RuntimeError, 'manual_browser_login_in_progress'):
+                self.client.call('agent_browser_open', {'url': 'https://example.com/'})
+        self.spawn.assert_not_called()
+
+    def test_profile_lease_prevents_other_gateway_until_confirmed_close(self):
+        self.client.call('agent_browser_open', {'url': 'https://example.com/'})
+        other = browser.HeadlessBrowser(timeout=.1)
+        self.addCleanup(other.close)
+        with self.assertRaises((RuntimeError, ValueError, PermissionError)):
+            other.call('agent_browser_open', {'url': 'https://example.com/'})
+        self.assertEqual(self.spawn.call_count, 1)
+        self.client.call('agent_browser_close')
+        self.assertTrue(other.call('agent_browser_open', {'url': 'https://example.com/'})['browser_started'])
+        self.assertEqual(self.spawn.call_count, 2)
+
+    def test_missing_positive_close_ack_keeps_transport_and_lease(self):
+        self.client.call('agent_browser_open', {'url': 'https://example.com/'})
+        process = self.client._process
+        with patch.object(self.client, '_rpc', return_value={'content': [{'type': 'text', 'text': '{}'}]}):
+            value = self.client.call('agent_browser_close')
+        self.assertTrue(value['isError'])
+        self.assertIs(self.client._process, process)
+        self.assertIsNotNone(self.client._profile_lease)
+        self.assertIsNone(process.returncode)
+
+    def test_worker_eof_releases_profile_lease_without_another_host_call(self):
+        self.client.call('agent_browser_open', {'url': 'https://example.com/'})
+        process = self.client._process
+        released = threading.Event()
+        original_stop = self.client._stop
+        def stop():
+            try:
+                original_stop()
+            finally:
+                released.set()
+        with patch.object(self.client, '_stop', side_effect=stop):
+            process.terminate()
+            self.assertTrue(released.wait(1), 'Reader did not release the idle worker lease')
+        self.assertIsNone(self.client._profile_lease)
+        other = browser.HeadlessBrowser(timeout=.1)
+        self.addCleanup(other.close)
+        self.assertTrue(other.call('agent_browser_open', {'url': 'https://example.com/'})['browser_started'])
+
+    def test_failed_worker_termination_retains_process_handle_and_profile_lease(self):
+        self.client.call('agent_browser_open', {'url': 'https://example.com/'})
+        process = self.client._process
+        with patch.object(process, 'terminate', side_effect=PermissionError('fixture')):
+            with self.assertRaisesRegex(RuntimeError, 'browser_worker_stop_not_confirmed'):
+                self.client._stop()
+        self.assertIs(self.client._process, process)
+        self.assertIsNotNone(self.client._profile_lease)
+        other = browser.HeadlessBrowser(timeout=.1)
+        self.addCleanup(other.close)
+        with self.assertRaises((RuntimeError, ValueError, PermissionError)):
+            other.call('agent_browser_open', {'url': 'https://example.com/'})
+        self.assertEqual(self.spawn.call_count, 1)
+        self.client.close()
+        self.assertIsNone(self.client._profile_lease)
 
 
 

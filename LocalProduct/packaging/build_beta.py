@@ -21,6 +21,7 @@ SOURCES = ['app.py', 'daily_plan.py', 'daily_plan_ui.py', 'daily_plan_animation.
 
 SOURCES += ['application_launcher.py', 'browser_access.py', 'agent_apps.py']
 SOURCES += ['headless_browser.py', 'agent_control.py', 'parent_apps.py', 'session_control.py', 'power_control.py', 'power_ui.py']
+SOURCES += ['browser_session.py', 'browser_login_ui.py']
 
 def run(args):
     subprocess.run([str(x) for x in args], check=True, cwd=PRODUCT)

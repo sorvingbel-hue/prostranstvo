@@ -14,6 +14,7 @@ from urllib.parse import urlsplit
 
 from activity_core import no_links
 from browser_access import validate_https_url
+from browser_session import owned_profile_path, profile_lease, manual_login_pending
 import paths
 
 ALLOWED_HOSTS = ('example.com', 'www.facebook.com', 'facebook.com')
@@ -58,12 +59,15 @@ class HeadlessBrowser:
         self._process = None
         self._responses = None
         self._id = 0
+        self._profile_lease = None
 
     def _start(self):
         node, worker, engine = _dependencies()
         env = dict(os.environ)
-        local = Path(env.get('LOCALAPPDATA') or Path.home() / 'AppData/Local').absolute()
-        profile = no_links(local / 'ProstranstvoAgentBrowser/profiles/edge')
+        lease = profile_lease(headless=True)
+        lease.__enter__()
+        self._profile_lease = lease
+        profile = owned_profile_path()
         env.update(PROSTRANSTVO_BROWSER_ENGINE=engine,
                    PROSTRANSTVO_BROWSER_PROFILE=str(profile),
                    PROSTRANSTVO_BROWSER_ALLOWED_HOSTS=','.join(ALLOWED_HOSTS))
@@ -85,6 +89,16 @@ class HeadlessBrowser:
                 pass
             finally:
                 responses.put(None)
+                # Node may exit on its idle timer while the host stays alive.
+                # Release this gateway's lease without waiting for another RPC.
+                # Queue EOF first so an in-flight RPC can leave its lock.
+                with self._lock:
+                    if self._process is process:
+                        try:
+                            self._stop()
+                        except RuntimeError:
+                            # Retain the handle/lease for explicit recovery.
+                            pass
         threading.Thread(target=read, daemon=True, name='ProstranstvoBrowserRPC').start()
         self._rpc('initialize', {'protocolVersion': '2024-11-05', 'capabilities': {},
                                 'clientInfo': {'name': 'prostranstvo', 'version': '1'}})
@@ -133,10 +147,13 @@ class HeadlessBrowser:
                 self._stop()
             if name == 'agent_browser_close' and self._process is None:
                 return {'closed': True, 'browser_started': False}
+            pending = False if name == 'agent_browser_close' else manual_login_pending()
+            if pending and name not in ('agent_browser_status', 'agent_browser_close'):
+                raise RuntimeError('manual_browser_login_in_progress')
             if name == 'agent_browser_status' and self._process is None:
                 result = {'dependency_ready': False, 'browser_started': False,
                           'browser_readiness': 'not_verified', 'headless': True,
-                          'allowed_hosts': list(ALLOWED_HOSTS)}
+                          'allowed_hosts': list(ALLOWED_HOSTS), 'manual_login_pending': pending}
                 try:
                     _dependencies()
                     result['dependency_ready'] = True
@@ -147,15 +164,23 @@ class HeadlessBrowser:
                 if self._process is None:
                     self._start()
                 result = self._rpc('tools/call', {'name': name, 'arguments': args})
-                if name == 'agent_browser_close':
-                    self._stop()
                 content = result.get('content', []) if isinstance(result, dict) else []
+                decoded = None
                 if (isinstance(result, dict) and not result.get('isError')
                         and len(content) == 1 and content[0].get('type') == 'text'):
                     try:
-                        return json.loads(content[0]['text'])
+                        decoded = json.loads(content[0]['text'])
                     except (ValueError, KeyError):
                         pass
+                if name == 'agent_browser_close' and (not isinstance(result, dict) or not result.get('isError')):
+                    if not isinstance(decoded, dict) or decoded.get('status') != 'owned_browser_closed':
+                        return {'isError': True, 'content': [{'type': 'text', 'text':
+                                '{"error":"owned_browser_close_not_confirmed"}'}]}
+                    self._stop()
+                if decoded is not None:
+                    if name == 'agent_browser_status' and isinstance(decoded, dict):
+                        decoded['manual_login_pending'] = pending
+                    return decoded
                 return result
             except Exception:
                 # A late reply must never be consumed as the next request's answer.
@@ -163,32 +188,50 @@ class HeadlessBrowser:
                 raise
 
     def _stop(self):
-        process, self._process = self._process, None
-        if process is None:
-            return
-        try:
-            if process.poll() is None:
-                process.terminate()
+        process = self._process
+        if process is not None:
             try:
-                process.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait(timeout=2)
-        finally:
-            for stream in (process.stdin, process.stdout):
+                if process.poll() is None:
+                    process.terminate()
+                try:
+                    process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait(timeout=2)
+            except Exception as error:
+                # Do not discard a live process or its profile lease on a
+                # failed terminate/kill. Another controller must stay blocked.
+                if process.poll() is None:
+                    raise RuntimeError('browser_worker_stop_not_confirmed') from error
+            if process.poll() is None:
+                raise RuntimeError('browser_worker_stop_not_confirmed')
+        self._process = None
+        try:
+            for stream in (process.stdin, process.stdout) if process is not None else ():
                 if stream is not None:
                     try:
                         stream.close()
                     except (OSError, ValueError):
                         pass
+        finally:
             self._responses = None
+            lease, self._profile_lease = self._profile_lease, None
+            if lease is not None:
+                lease.__exit__(None, None, None)
 
     def close(self):
         try:
             self.call('agent_browser_close', {})
         except Exception:
+            pass
+        finally:
+            # Service/destructor cleanup is best-effort, not proof that the
+            # browser accepted the RPC close request.
             with self._lock:
-                self._stop()
+                try:
+                    self._stop()
+                except Exception:
+                    pass
 
 
 _browser = HeadlessBrowser()
