@@ -11,6 +11,20 @@ import sys
 from paths import APP_ROOT, DATA_ROOT, DEFAULT_ALLOWED_ROOTS
 from version import VERSION
 
+SELF_TEST_MODULES = (
+    'app', 'engine', 'activity_agent', 'history_schedule', 'family_messages_ui', 'family_agent',
+    'family_telegram', 'kitten_messenger', 'cat_api', 'cat_brain', 'cat_knowledge', 'cat_ai_ui',
+    'cat_dialogue', 'cat_study', 'family_context', 'family_context_ui', 'cat_voice', 'cat_speech',
+    'speech_worker', 'pet_tricks', 'pet_tricks_server', 'pet_tricks_launch', 'desktop_pet',
+    'study_core', 'study_windows', 'study_ui', 'study_guard', 'study_resume', 'study_runtime',
+    'study_shell', 'folder_policy', 'folder_ui', 'local_rules', 'rules_ui', 'indexed_archives',
+    'archive_ui', 'application_launcher', 'browser_access', 'agent_apps', 'agent_control',
+    'headless_browser', 'browser_session', 'browser_login_ui', 'parent_apps', 'codex_pause',
+    'session_control', 'power_control', 'power_ui', 'maintenance_advisor', 'maintenance_ui',
+    'maintenance_sequence', 'storage_audit', 'system_broker',
+    'storage_tasks', 'storage_ui', 'security_report', 'security_ui', 'security_mcp',
+)
+
 class GuiLock:
     def __enter__(self):
         key = hashlib.sha256(os.path.normcase(str(DATA_ROOT.absolute())).encode('utf-8')).hexdigest()
@@ -54,7 +68,7 @@ def prepare_uninstall():
 
 def main():
     parser = argparse.ArgumentParser(description='Пространство Local Beta', allow_abbrev=False)
-    parser.add_argument('mode', choices=('ui', 'messages', 'reply', 'kitten', 'pet', 'activity-agent', 'family-agent', 'history-collect', 'mcp', 'family-mcp', 'study-resume', 'status', 'self-test', 'prepare-uninstall', 'speech-transcribe', 'tricks', 'power-worker'))
+    parser.add_argument('mode', choices=('ui', 'messages', 'reply', 'kitten', 'pet', 'activity-agent', 'family-agent', 'history-collect', 'mcp', 'family-mcp', 'security-mcp', 'study-resume', 'status', 'self-test', 'prepare-uninstall', 'speech-transcribe', 'tricks', 'power-worker', 'storage-worker'))
     parser.add_argument('--activity', action='store_true')
     parser.add_argument('--messages', action='store_true')
     parser.add_argument('--setup', action='store_true')
@@ -67,7 +81,32 @@ def main():
     parser.add_argument('--serve-only', action='store_true')
     parser.add_argument('--request-id')
     parser.add_argument('--worker-id')
+    parser.add_argument('--task-id')
+    parser.add_argument('--no-gui', action='store_true', help='Self-test imports/offline logic without creating Tk')
+    parser.add_argument('--runtime-only', action='store_true', help='Self-test runtime metadata only; no assets or Tk')
     args = parser.parse_args()
+    if args.no_gui and args.mode != 'self-test':
+        parser.error('--no-gui is only supported for self-test')
+    if args.runtime_only:
+        if args.mode != 'self-test':
+            parser.error('--runtime-only is only supported for self-test')
+        if any((args.activity, args.messages, args.setup, args.background, args.ready_stdout,
+                args.reply_to, args.mini, args.greet, args.open, args.serve_only,
+                args.request_id, args.worker_id, args.task_id)):
+            parser.error('Runtime metadata self-test accepts no other action options')
+    if args.mode == 'storage-worker':
+        if not args.task_id or not re.fullmatch(r'[0-9a-f]{32}', args.task_id):
+            parser.error('Storage worker requires an exact task ID')
+        if any((args.activity, args.messages, args.setup, args.background, args.ready_stdout,
+                args.reply_to, args.mini, args.greet, args.open, args.serve_only,
+                args.request_id, args.worker_id)):
+            parser.error('Storage worker accepts only --task-id')
+    elif args.task_id is not None:
+        parser.error('Storage task ID is only supported for storage-worker')
+    if args.mode == 'security-mcp' and any((args.activity, args.messages, args.setup,
+            args.background, args.ready_stdout, args.reply_to, args.mini, args.greet,
+            args.open, args.serve_only, args.request_id, args.worker_id)):
+        parser.error('Security MCP accepts no command-line options')
     if args.mode == 'power-worker':
         if (not args.request_id or not re.fullmatch(r'[0-9a-f]{32}', args.request_id) or
                 not args.worker_id or not re.fullmatch(r'[0-9a-f]{32}', args.worker_id)):
@@ -95,7 +134,10 @@ def main():
         parser.error('Speech worker accepts no arguments')
     if args.reply_to and not re.fullmatch(r'[A-Za-z0-9_-]{1,100}', args.reply_to):
         parser.error('Invalid reply ID')
-    if args.mode == 'power-worker':
+    if args.mode == 'storage-worker':
+        from storage_tasks import main as storage_main
+        return storage_main(['--worker', args.task_id])
+    elif args.mode == 'power-worker':
         from power_control import PowerControl
         value = PowerControl().run_worker(args.request_id, args.worker_id)
         print(json.dumps(value, ensure_ascii=False))
@@ -146,6 +188,9 @@ def main():
     elif args.mode == 'family-mcp':
         from family_mcp import main as family_main
         family_main()
+    elif args.mode == 'security-mcp':
+        from security_mcp import main as security_main
+        return security_main()
     elif args.mode == 'study-resume':
         from study_runtime import main as study_main
         return study_main(['--resume'])
@@ -154,19 +199,39 @@ def main():
         print(json.dumps({'product': 'prostranstvo-local-beta', 'version': VERSION, 'app': str(APP_ROOT), 'data': str(DATA_ROOT), 'status': Executor().status()}, ensure_ascii=False))
     elif args.mode == 'self-test':
         # No executor, browser, credentials, startup entries or network are used.
+        import ssl
+        import sqlite3
+        import zlib
+        runtime = {'implementation': sys.implementation.name, 'python': sys.version.split()[0],
+                   'openssl': ssl.OPENSSL_VERSION, 'sqlite': sqlite3.sqlite_version,
+                   'zlib': zlib.ZLIB_RUNTIME_VERSION}
+        if args.runtime_only:
+            # Build preflight runs before resources are copied beside the Core.
+            print(json.dumps({'status': 'ok', 'version': VERSION, 'runtime': runtime,
+                              'check': 'runtime_metadata_only', 'tk_tested': False,
+                              'data_created': False}))
+            return 0
         import importlib
         import tkinter as tk
         from tkinter import ttk
-        for module in ('app', 'engine', 'activity_agent', 'history_schedule', 'family_messages_ui', 'family_agent', 'family_telegram', 'kitten_messenger', 'cat_api', 'cat_brain', 'cat_knowledge', 'cat_ai_ui', 'cat_dialogue', 'cat_study', 'family_context', 'family_context_ui', 'cat_voice', 'cat_speech', 'speech_worker', 'pet_tricks', 'pet_tricks_server', 'pet_tricks_launch', 'desktop_pet', 'study_core', 'study_windows', 'study_ui', 'study_guard', 'study_resume', 'study_runtime', 'study_shell', 'folder_policy', 'folder_ui', 'local_rules', 'rules_ui', 'indexed_archives', 'archive_ui'):
+        # Static imports also make these inert modules discoverable by the frozen build.
+        import application_launcher, browser_access, agent_apps, agent_control
+        import headless_browser, browser_session, browser_login_ui, parent_apps, codex_pause
+        import session_control, power_control, power_ui, maintenance_advisor, maintenance_ui
+        import maintenance_sequence, storage_audit, system_broker
+        import storage_tasks, storage_ui, security_report, security_ui, security_mcp
+        for module in SELF_TEST_MODULES:
             importlib.import_module(module)
-        root = tk.Tk()
-        try:
-            root.withdraw()
-            ttk.Frame(root).pack()
-            root.update_idletasks()
-            tk_version = root.tk.call('info', 'patchlevel')
-        finally:
-            root.destroy()
+        tk_version = None
+        if not args.no_gui:
+            root = tk.Tk()
+            try:
+                root.withdraw()
+                ttk.Frame(root).pack()
+                root.update_idletasks()
+                tk_version = root.tk.call('info', 'patchlevel')
+            finally:
+                root.destroy()
         from cat_brain import CatBrain
         from cat_dialogue import CatDialogue
         from cat_knowledge import ApprovedKnowledge
@@ -178,7 +243,9 @@ def main():
         assert 'Тестик' in brain.reply('Как меня зовут?')['text']
         assert 'Roblox' in brain.reply('Мне нравится Roblox')['text']
         assert brain.last_metadata['api_attempted'] is False
-        print(json.dumps({'status': 'ok', 'version': VERSION, 'tk': tk_version, 'data_created': False,
+        print(json.dumps({'status': 'ok', 'version': VERSION, 'tk': tk_version,
+            'tk_tested': not args.no_gui, 'imports_checked': list(SELF_TEST_MODULES), 'data_created': False,
+            'runtime': runtime,
             'cat_ai': {'offline_default': True, 'approved_cards': len(knowledge._records),
                        'session_name': True, 'no_network_calls': True}}))
     elif args.mode == 'prepare-uninstall':

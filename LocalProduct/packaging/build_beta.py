@@ -1,13 +1,19 @@
 """Rebuild the clean Windows x64 beta; never packages the personal deployment."""
 import argparse
 import hashlib
+from importlib import metadata
 import json
+import re
 import runpy
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+import platform
 import shutil
+import sqlite3
+import ssl
 import subprocess
 import sys
 import zipfile
+import zlib
 
 PRODUCT = Path(__file__).resolve().parents[1]
 BUILD = PRODUCT / 'build'
@@ -24,6 +30,10 @@ SOURCES += ['headless_browser.py', 'agent_control.py', 'parent_apps.py', 'sessio
 SOURCES += ['browser_session.py', 'browser_login_ui.py']
 SOURCES += ['maintenance_advisor.py', 'maintenance_ui.py', 'maintenance_sequence.py']
 SOURCES += ['storage_audit.py']
+SOURCES += ['storage_tasks.py', 'storage_ui.py', 'security_report.py', 'security_ui.py', 'security_mcp.py']
+
+MINIMUM_PYTHON_PATCH = 18
+FROZEN_CHECK_TIMEOUT = 45
 
 def run(args):
     subprocess.run([str(x) for x in args], check=True, cwd=PRODUCT)
@@ -47,17 +57,133 @@ def hash_file(path):
     with open(path, 'rb') as stream:
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
+def runtime_modules():
+    """Bundle the reviewed inventory, including modules used by dynamic entry points."""
+    expected = set(SOURCES)
+    actual = {path.name for path in (PRODUCT / 'src').glob('*.py')}
+    if len(expected) != len(SOURCES) or expected != actual:
+        raise RuntimeError('Reviewed source inventory must match src exactly without duplicates')
+    return [Path(name).stem for name in SOURCES if name != 'local_main.py']
+
+def pyinstaller_license_info():
+    """Resolve COPYING from the active distribution's RECORD, never a glob."""
+    try:
+        distribution = metadata.distribution('pyinstaller')
+    except metadata.PackageNotFoundError as exc:
+        raise RuntimeError('PyInstaller distribution metadata is required to package its license') from exc
+    version = distribution.version
+    if not isinstance(version, str) or not version or any(ord(c) < 32 for c in version):
+        raise RuntimeError('PyInstaller distribution has an invalid version')
+    if str(distribution.metadata.get('Name', '')).lower() != 'pyinstaller':
+        raise RuntimeError('Unexpected distribution returned for PyInstaller')
+    entries = []
+    for entry in distribution.files or ():
+        path = PurePosixPath(str(entry))
+        if path.is_absolute() or '..' in path.parts or '\\' in str(entry):
+            continue
+        entries.append((entry, path.parts))
+    roots = {parts[0] for _, parts in entries if len(parts) == 2 and parts[1] == 'METADATA'
+             and parts[0].lower().startswith('pyinstaller-') and parts[0].lower().endswith('.dist-info')}
+    if len(roots) != 1:
+        raise RuntimeError('PyInstaller must have one recorded dist-info metadata directory')
+    root = next(iter(roots))
+    if root.lower() != f'pyinstaller-{version}.dist-info'.lower():
+        raise RuntimeError('PyInstaller version does not match its recorded dist-info directory')
+    matches = [entry for entry, parts in entries if parts in
+               ((root, 'licenses', 'COPYING.txt'), (root, 'COPYING.txt'))]
+    if len(matches) != 1:
+        raise RuntimeError('PyInstaller must have exactly one recorded COPYING.txt license')
+    license_path = Path(distribution.locate_file(matches[0]))
+    if not license_path.is_file() or license_path.stat().st_size == 0:
+        raise RuntimeError('Required PyInstaller COPYING.txt license is missing or empty')
+    return version, license_path
+
+def write_build_notice(destination, pyinstaller_version):
+    # Describe the current build toolchain accurately even when --reuse-runtime is used.
+    destination.write_text(
+        f'Beta {VERSION} includes Python, Tcl/Tk 8.6, SQLite and the PyInstaller bootloader. '
+        f'Build interpreter: {platform.python_implementation()} {platform.python_version()}. '
+        f'Packaging tool: PyInstaller {pyinstaller_version}. '
+        'Bundled license texts are included; see RELEASE-PYTHON-RUNTIME-RU.txt for provenance and remaining license-mapping limits. '
+        'Runtime libraries are included only to run this application. '
+        'This private beta is unsigned. No public redistribution license for the application source is granted yet.\n',
+        encoding='utf-8')
+
+def validate_python_runtime(implementation, version, *, context='Python runtime'):
+    """Accept only final CPython releases on the reviewed 3.13 security baseline."""
+    match = re.fullmatch(r'3\.13\.(0|[1-9][0-9]*)', version) if isinstance(version, str) else None
+    if implementation != 'cpython' or match is None or int(match.group(1)) < MINIMUM_PYTHON_PATCH:
+        raise RuntimeError(f'{context} must be final CPython 3.13.{MINIMUM_PYTHON_PATCH} or newer on the 3.13 line')
+    return version
+
+
+def build_python_version():
+    return validate_python_runtime(sys.implementation.name, sys.version.split()[0], context='Build interpreter')
+
+
+def build_runtime_info():
+    return {'implementation': sys.implementation.name, 'python': build_python_version(),
+            'openssl': ssl.OPENSSL_VERSION, 'sqlite': sqlite3.sqlite_version,
+            'zlib': zlib.ZLIB_RUNTIME_VERSION}
+
+
+def verify_frozen_runtime(expected_runtime):
+    """Probe only this build's owned Core before touching the payload stage."""
+    runtime = BUILD / 'pyinstaller-dist' / 'ProstranstvoCore'
+    core = runtime / 'ProstranstvoCore.exe'
+    expected_core = BUILD.resolve() / 'pyinstaller-dist' / 'ProstranstvoCore' / 'ProstranstvoCore.exe'
+    if not core.is_file() or core.resolve() != expected_core:
+        raise RuntimeError('Owned frozen Core is missing or resolves outside its fixed build path')
+    try:
+        result = subprocess.run(
+            [str(core), 'self-test', '--runtime-only'], cwd=runtime,
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            text=True, encoding='utf-8', errors='strict', shell=False, check=False,
+            timeout=FROZEN_CHECK_TIMEOUT, creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0),
+        )
+    except (OSError, subprocess.SubprocessError, UnicodeError) as error:
+        raise RuntimeError('Frozen Core self-test could not complete within its bounded runtime-only probe') from error
+    if result.returncode != 0:
+        raise RuntimeError('Frozen Core runtime-only self-test returned a failure')
+    try:
+        report = json.loads(result.stdout)
+    except (TypeError, ValueError) as error:
+        raise RuntimeError('Frozen Core self-test did not return valid JSON') from error
+    if not isinstance(report, dict) or report.get('status') != 'ok' or report.get('version') != VERSION:
+        raise RuntimeError('Frozen Core self-test status or product version does not match this build')
+    if report.get('check') != 'runtime_metadata_only':
+        raise RuntimeError('Frozen Core self-test runtime-only check marker is missing or invalid')
+    frozen = report.get('runtime')
+    if not isinstance(frozen, dict):
+        raise RuntimeError('Frozen Core self-test runtime metadata is missing')
+    frozen_python = validate_python_runtime(
+        frozen.get('implementation'), frozen.get('python'), context='Frozen Core runtime',
+    )
+    if frozen_python != expected_runtime['python']:
+        raise RuntimeError('Frozen Core Python version does not match the build interpreter')
+    for library in ('openssl', 'sqlite', 'zlib'):
+        if frozen.get(library) != expected_runtime[library]:
+            raise RuntimeError(f'Frozen Core {library} runtime does not match the build interpreter')
+    return runtime
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument('--reuse-runtime', action='store_true', help='Only for reassembling unchanged Python code')
     args = p.parse_args()
-    BUILD.mkdir(exist_ok=True)
-    RELEASES.mkdir(exist_ok=True)
+    pyinstaller_version, pi_license = pyinstaller_license_info()
+    expected_runtime = build_runtime_info()
+    modules = runtime_modules()
     if not args.reuse_runtime:
+        BUILD.mkdir(exist_ok=True)
+        # importlib-based entry points are invisible to ordinary import analysis.
+        hidden = [argument for name in modules for argument in ('--hidden-import', name)]
         run([sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean', '--onedir', '--console',
              '--name', 'ProstranstvoCore', '--distpath', BUILD / 'pyinstaller-dist',
-             '--workpath', BUILD / 'pyinstaller-work', '--specpath', BUILD, PRODUCT / 'src' / 'local_main.py'])
-    runtime = BUILD / 'pyinstaller-dist' / 'ProstranstvoCore'
+             '--workpath', BUILD / 'pyinstaller-work', '--specpath', BUILD,
+             '--paths', PRODUCT / 'src', *hidden, PRODUCT / 'src' / 'local_main.py'])
+    runtime = verify_frozen_runtime(expected_runtime)
+    RELEASES.mkdir(exist_ok=True)
     stage = BUILD / 'payload'
     if stage.exists():
         assert stage.resolve() == (PRODUCT / 'build' / 'payload').resolve()
@@ -76,6 +202,8 @@ def main():
     shutil.copy2(PRODUCT / 'docs' / 'AGENT-CONTROL-RU.txt', stage / 'AGENT-CONTROL-RU.txt')
     shutil.copy2(PRODUCT / 'docs' / 'WINDOWS-HEALTH-RU.txt', stage / 'WINDOWS-HEALTH-RU.txt')
     shutil.copy2(PRODUCT / 'docs' / 'STORAGE-AUDIT-RU.txt', stage / 'STORAGE-AUDIT-RU.txt')
+    for name in ('SECURITY-REPORT-RU.txt', 'SECURITY-CHANNEL-RU.txt', 'STORAGE-TASKS-RU.txt', 'PRODUCT-ROADMAP-RU.md', 'RELEASE-PYTHON-RUNTIME-RU.txt'):
+        shutil.copy2(PRODUCT / 'docs' / name, stage / name)
     licenses = stage / 'licenses'
     licenses.mkdir()
     python_base = Path(sys.base_prefix)
@@ -84,13 +212,8 @@ def main():
     if tk_license.exists():
         shutil.copy2(tk_license, licenses / 'Tk-license.terms')
     shutil.copy2(PRODUCT / 'packaging' / 'licenses' / 'Tcl-license.terms', licenses / 'Tcl-license.terms')
-    import PyInstaller
-    pi_license = Path(PyInstaller.__file__).parent.parent / 'pyinstaller-6.22.3.dist-info' / 'licenses' / 'COPYING.txt'
-    if not pi_license.exists():
-        pi_license = Path(PyInstaller.__file__).parent.parent / 'pyinstaller-6.22.3.dist-info' / 'COPYING.txt'
-    if pi_license.exists():
-        shutil.copy2(pi_license, licenses / 'PyInstaller-COPYING.txt')
-    (licenses / 'NOTICE.txt').write_text(f'Beta {VERSION} bundles CPython 3.13.3, Tcl/Tk 8.6, SQLite and the PyInstaller 6.22.3 bootloader. Python license includes its bundled third-party notices. Runtime libraries are included only to run this application. This private beta is unsigned. No public redistribution license for the application source is granted yet.\n', encoding='utf-8')
+    shutil.copy2(pi_license, licenses / 'PyInstaller-COPYING.txt')
+    write_build_notice(licenses / 'NOTICE.txt', pyinstaller_version)
     manifest = {'product': 'prostranstvo-local-beta', 'version': VERSION, 'files': {}}
     for file in sorted(stage.rglob('*')):
         if file.is_file():

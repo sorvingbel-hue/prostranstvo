@@ -1,3 +1,29 @@
+# Independent QA - current source snapshot 0.1.15
+
+Current source-QA baseline: 19 November 2026. This update contains source only. It does not publish binaries, alter an installed family computer, or establish completion of the full product concept.
+
+- Build baseline: final CPython 3.13.x, patch 18 or later, with Tk. Recorded packaging tool: PyInstaller 6.22.3 (pinned build requirements).
+- Privately checked candidate 0.1.15: CPython 3.13.18, OpenSSL 3.5.9, SQLite 3.53.1, zlib 1.3.2; actual frozen hidden-Tk check: Tk 8.6.15.
+- Recorded Windows LocalProduct run: 1080 tests, 1075 successful, 5 skipped, 98.093 seconds. Separate LearningModule run: 67 successful. These counts are not evidence of a live parent/child workflow.
+- Private package no-GUI verification passed, including isolated install/upgrade and runtime checks. Restricted MCP and frozen worker checks remain distinct from real Windows acceptance. Installers, personal profiles, credentials and runtime logs are not part of this source update.
+- Added source includes sanitized security reports and a restricted two-tool channel, metadata-only storage jobs/UI, file rollback regression, runtime preflight and isolated family workflow checks.
+- Still open: real Study/PIN recovery and Windows sign-in/reboot; separate child-account setup/use; live microphone/audibility, API, Telegram and deliberate browser login; clean-machine install/upgrade/uninstall; complete native-component/license mapping.
+- LearningModule remains a limited fraction-addition prototype. Percentage scoring, reward wallets, savings goals, phone products, multi-PC networking and a universal AI shield are not completed features.
+
+Read [current QA](QA.md), [scope and release gates](LocalProduct/docs/PRODUCT-ROADMAP-RU.md), [runtime provenance and license-mapping limits](LocalProduct/docs/RELEASE-PYTHON-RUNTIME-RU.txt), [security reports](LocalProduct/docs/SECURITY-REPORT-RU.txt), [restricted channel](LocalProduct/docs/SECURITY-CHANNEL-RU.txt) and [storage jobs](LocalProduct/docs/STORAGE-TASKS-RU.txt).
+
+The fixed runtime-only build probe checks loaded metadata before assets are copied; it does not replace package, Tk or end-to-end checks. Passing tests or an old version alone establishes neither safety nor exploitability. Public source availability does not grant a new redistribution license; retain existing notices and the explicit remaining review limits.
+
+Priority review: allowed roots/changed files/collisions/receipts/recovery; durable PIN and approval bound to the correct lease; sanitized report unknown/freshness states; job ownership/cancellation/committed metadata; and runtime/version/license provenance. Use disposable fixtures. New family-flow cases use withdrawn Tk, real local stores and a fake desktop, not real sign-in/reboot/window enforcement.
+
+Record the reviewed Git commit SHA. Do not connect real accounts, alter real startup/services, activate Study on a family computer, or run destructive file actions during unattended source QA. No general BIOS/root capability, stealth behavior or absolute protection is claimed. A PIN in a shared administrator account is not an OS security boundary.
+
+---
+
+## Retained historical notes and dated QA
+
+The material below belongs to earlier snapshots through 18 November. Earlier beta 0.1.12 and pending-build statements are historical, superseded by the 0.1.15 source-QA summary above. Historical results are not added to the current test totals. Historical commands using generic Python 3.13 must now satisfy the final 3.13.18+ build floor.
+
 # Independent QA / review guide
 
 This is a source snapshot of Prostranstvo, a local Windows family application. Review this exact Git commit and report its SHA. Runtime profiles, credentials, messages, browser history, screenshots, databases and installed binaries are excluded.
