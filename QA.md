@@ -1,22 +1,26 @@
-# Independent QA - current source snapshot 0.1.16
+# Independent QA - current source snapshot 0.1.17
 
-Current source-QA baseline: 19 November 2026. This update contains source only. It does not publish binaries, alter an installed family computer, or establish completion of the full product concept.
+Current source-QA baseline: 19 November 2026. This source-only update is relative to the accepted 0.1.16 QA tree. It does not publish installers, replace an installed family computer or establish completion of the entire concept.
 
-- Build baseline: final CPython 3.13.x, patch 18 or later, with Tk. Recorded packaging tool: PyInstaller 6.22.3 (pinned build requirements).
-- Privately checked candidate 0.1.16: CPython 3.13.18, OpenSSL 3.5.9, SQLite 3.53.1, zlib 1.3.2; actual frozen hidden-Tk check: Tk 8.6.15.
-- Recorded Windows LocalProduct run: 1083 tests, 1078 successful, 5 skipped, 96.878 seconds. Separate LearningModule run: 67 successful. These counts are not evidence of a live parent/child workflow.
-- Private package no-GUI verification passed, including isolated install/upgrade and runtime checks. Restricted MCP and frozen worker checks remain distinct from real Windows acceptance. Installers, personal profiles, credentials and runtime logs are not part of this source update.
-- A further real frozen-worker check after 0.1.15 found a Windows mandatory-byte-lock initialization race. Version 0.1.16 removes the pre-lock byte read/write and adds real cross-process locking regressions; prior passing suites did not cover that scenario.
-- Actual 0.1.16 frozen worker passed on two owned fixture files (37 bytes total), both preserved. Parent status observed queued/completed without EACCES retries; running was not an observed state. Source-widget and in-memory TTS checks also passed; in-memory TTS is not proof of audible playback.
-- Added source includes sanitized security reports and a restricted two-tool channel, metadata-only storage jobs/UI, file rollback regression, runtime preflight and isolated family workflow checks.
-- Still open: real Study/PIN recovery and Windows sign-in/reboot; separate child-account setup/use; live microphone/audibility, API, Telegram and deliberate browser login; clean-machine install/upgrade/uninstall; complete native-component/license mapping.
-- LearningModule remains a limited fraction-addition prototype. Percentage scoring, reward wallets, savings goals, phone products, multi-PC networking and a universal AI shield are not completed features.
+- Build baseline remains final CPython 3.13.x patch 18 or later with Tk; recorded packaging tool PyInstaller 6.22.3. The privately checked 0.1.17 runtime reports CPython 3.13.18, OpenSSL 3.5.9, SQLite 3.53.1 and zlib 1.3.2.
+- Current Windows LocalProduct suite: 1101 run, 1096 successful, 5 skipped, 113.214 seconds. It executed on a newly created non-input QA desktop, checked before importing Tk/tests. The input desktop remained Default before/after; no desktop switch or input injection occurred. This scopes GUI execution, not OS/account/registry/service isolation or a real family workflow.
+- Separate LearningModule result remains 67 successful on the same runtime; that module did not change.
+- Private 0.1.17 package no-GUI install/upgrade and MCP checks passed (23 general + 3 family + 2 restricted tools). Actual frozen hidden Tk 8.6.15 and source hidden App checks passed separately.
+- The actual isolated frozen storage worker passed on two owned fixture files, 37 bytes total, both preserved, without Python on the child PATH. Polling observed queued/completed without EACCES harness retries; running was not observed. Packaged TTS generated a 228374-byte WAV in memory without playback or microphone use; this is not audibility.
+- New source requires the configured parent PIN before enabling the external pet API, opening AI settings and each settings save. Offline remains selectable without PIN. The PIN stays in the UI handler, not the worker/API/log. A shared administrator account can still bypass this UI boundary outside the application.
+- General MCP reads at most 1 MiB characters plus one sentinel character per line. Oversized input returns one protocol error and closes without parsing a following suffix. Portable source exposes no SYSTEM maintenance tool.
+- The separate personal MCP route rejects repair/cleanup before its broker and advertises only diagnostics/health/scan. That private route is not published here; the SYSTEM service/pipe and already cached MCP processes are not changed by this source update.
+- The 0.1.16 mandatory-byte-lock fix and real-process regressions remain. Earlier 0.1.15 passing checks did not cover the subsequently discovered lock race.
+- Still open: actual Study/PIN recovery and Windows sign-in/reboot, child-account setup/use, live voice/API/Telegram/browser login, clean-machine install/upgrade/uninstall and native dependency/license mapping. Other independent review findings remain review work.
+- Percentage scoring, reward wallets, savings goals, full curriculum, phone/multi-PC products and a universal AI shield are not completed features.
 
-Read [current QA](QA.md), [scope and release gates](LocalProduct/docs/PRODUCT-ROADMAP-RU.md), [runtime provenance and license-mapping limits](LocalProduct/docs/RELEASE-PYTHON-RUNTIME-RU.txt), [security reports](LocalProduct/docs/SECURITY-REPORT-RU.txt), [restricted channel](LocalProduct/docs/SECURITY-CHANNEL-RU.txt) and [storage jobs](LocalProduct/docs/STORAGE-TASKS-RU.txt).
+Read [current QA](QA.md), [scope/release gates](LocalProduct/docs/PRODUCT-ROADMAP-RU.md), [runtime provenance and remaining license limits](LocalProduct/docs/RELEASE-PYTHON-RUNTIME-RU.txt), [AI/PIN scope](LocalProduct/docs/CAT-AI-RU.txt), [maintenance boundaries](LocalProduct/docs/WINDOWS-HEALTH-RU.txt), and [restricted security channel](LocalProduct/docs/SECURITY-CHANNEL-RU.txt).
 
-The fixed runtime-only build probe checks loaded metadata before assets are copied; it does not replace package, Tk or end-to-end checks. Passing tests or an old version alone establishes neither safety nor exploitability. Public source availability does not grant a new redistribution license; retain existing notices and the explicit remaining review limits.
+The runtime-only build probe checks loaded metadata before resources are copied, separately from package/Tk/end-to-end checks. Passing tests alone proves neither universal safety nor exploitability. Public source availability does not grant a new redistribution license.
 
-The new file-locking regression always exercises the public portable backend and adds the private legacy backend only when present. Windows contention cases use a real hidden holder and native refusal barrier, not simulated PermissionError or outer harness retries. Empty and preexisting one-byte lock files must remain unchanged.
+Review the AI PIN failure/cancel/unconfigured paths before worker/save; no PIN may reach a worker or log. Bounded MCP tests execute real runpy dispatch over fake executor/broker: this is protocol evidence, not live SYSTEM execution. Portable assertions remain meaningful without the optional private backend.
+
+The retained file-locking regression always exercises the public portable backend and adds the private legacy backend only when present. Windows contention cases use a real hidden holder and native refusal barrier, not simulated PermissionError or outer harness retries. Empty and preexisting one-byte lock files must remain unchanged.
 
 Priority review: allowed roots/changed files/collisions/receipts/recovery; durable PIN and approval bound to the correct lease; sanitized report unknown/freshness states; job ownership/cancellation/committed metadata; and runtime/version/license provenance. Use disposable fixtures. New family-flow cases use withdrawn Tk, real local stores and a fake desktop, not real sign-in/reboot/window enforcement.
 
@@ -26,7 +30,7 @@ Record the reviewed Git commit SHA. Do not connect real accounts, alter real sta
 
 ## Retained historical notes and dated QA
 
-The material below belongs to earlier snapshots through 18 November. Earlier beta 0.1.12 and pending-build statements are historical, superseded by the 0.1.16 source-QA summary above. Historical results are not added to the current test totals. Historical commands using generic Python 3.13 must now satisfy the final 3.13.18+ build floor.
+The material below belongs to earlier snapshots through 18 November. Earlier beta 0.1.12 and pending-build statements are historical, superseded by the 0.1.17 source-QA summary above. Historical results are not added to the current test totals. Historical commands using generic Python 3.13 must now satisfy the final 3.13.18+ build floor.
 
 # Independent QA / review guide
 

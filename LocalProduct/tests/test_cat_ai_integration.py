@@ -32,6 +32,12 @@ class AiChatIntegrationTests(unittest.TestCase):
         self.settings.set_enabled.side_effect = self.save_mode
         self.gateway = mock.Mock()
         self.gateway.status.side_effect = lambda: dict(self.settings.snapshot())
+        self.guard = mock.Mock()
+        self.guard.configured.return_value = True
+        self.guard.verify.return_value = True
+        pin_dialog = mock.patch('cat_ai_ui.simpledialog.askstring', return_value='246810')
+        self.pin_dialog = pin_dialog.start()
+        self.addCleanup(pin_dialog.stop)
         self.log = MemoryLog()
         self.controller = mock.Mock()
         self.window = KittenMessenger(
@@ -39,7 +45,7 @@ class AiChatIntegrationTests(unittest.TestCase):
             family_context=SimpleNamespace(family_reply=lambda text: None),
             study_monitor=SimpleNamespace(poll=lambda: {'status': {'active': False}, 'events': []}),
             transcriber=SimpleNamespace(status=lambda: {'available': False}),
-            ai_settings=self.settings, ai_gateway=self.gateway)
+            ai_settings=self.settings, ai_gateway=self.gateway, parent_guard=self.guard)
         self.window.withdraw()
         self.pump(lambda: not self.window._busy_ai_status)
 
@@ -117,6 +123,58 @@ class AiChatIntegrationTests(unittest.TestCase):
         self.assertFalse(self.settings.snapshot.return_value['ready'])
         self.gateway.respond.assert_not_called()
         self.controller.send.assert_not_called()
+
+    def test_child_cannot_enable_saved_api_without_valid_parent_pin(self):
+        self.settings.snapshot.return_value.update(
+            key_configured=True, parental_consent=True, zdr_attested=True,
+            approval_reference='synthetic-approved-project')
+        self.guard.verify.return_value = False
+        self.select(self.window.ai_mode_button)
+        self.settings.set_enabled.assert_not_called()
+        self.assertFalse(self.settings.snapshot.return_value['enabled'])
+        self.assertIsNone(self.window._pending_ai_mode)
+        self.window.open_ai()
+        self.assertIsNone(self.window._ai_window)
+        self.gateway.respond.assert_not_called()
+
+    def test_missing_pin_blocks_api_settings_and_enable_without_setup_dialog(self):
+        self.guard.configured.return_value = False
+        self.select(self.window.ai_mode_button)
+        self.window.open_ai()
+        self.settings.set_enabled.assert_not_called()
+        self.assertIsNone(self.window._ai_window)
+        self.pin_dialog.assert_not_called()
+        self.guard.verify.assert_not_called()
+
+    def test_cancelled_parent_prompt_blocks_api_settings_and_enable(self):
+        self.pin_dialog.return_value = None
+        self.select(self.window.ai_mode_button)
+        self.window.open_ai()
+        self.settings.set_enabled.assert_not_called()
+        self.assertIsNone(self.window._ai_window)
+        self.guard.verify.assert_not_called()
+
+    def test_offline_selection_needs_no_parent_pin(self):
+        self.settings.snapshot.return_value.update(enabled=True, state='ready')
+        self.guard.configured.return_value = False
+        self.guard.verify.return_value = False
+        self.select(self.window.offline_mode_button)
+        self.settings.set_enabled.assert_called_once_with(False)
+        self.guard.configured.assert_not_called()
+        self.guard.verify.assert_not_called()
+        self.pin_dialog.assert_not_called()
+
+    def test_reopening_settings_requires_parent_pin_again(self):
+        self.window.open_ai()
+        first = self.window._ai_window
+        first.withdraw()
+        self.guard.verify.return_value = False
+        with mock.patch.object(first, 'lift') as lift:
+            self.window.open_ai()
+        lift.assert_not_called()
+        self.assertIs(self.window._ai_window, first)
+        self.guard.verify.assert_any_call('246810')
+        first.close()
 
     def test_pending_mode_save_preserves_draft_and_blocks_both_send_paths(self):
         started, release = threading.Event(), threading.Event()

@@ -9,10 +9,12 @@ import threading
 import time
 import tkinter as tk
 import unittest
+from types import SimpleNamespace
+from unittest import mock
 
-from cat_ai_ui import (ACCOUNT_NOTICE, ATTESTATION_NOTICE, ZDR_NOTICE,
+from cat_ai_ui import (ACCOUNT_NOTICE, ATTESTATION_NOTICE, ZDR_NOTICE, AiSettingsWindow,
                        collect_values, local_status_text, open_ai_settings,
-                       save_settings_worker)
+                       require_parent_pin, save_settings_worker)
 
 
 class FakeSettings:
@@ -95,7 +97,8 @@ class WorkerBoundaryTests(unittest.TestCase):
         self.assertIn('store=false', ZDR_NOTICE)
         self.assertIn('не включает', ZDR_NOTICE)
         self.assertIn('provider_privacy_verified=false', ATTESTATION_NOTICE)
-        self.assertIn('не является защищённой', ACCOUNT_NOTICE)
+        self.assertIn('интерфейсе', ACCOUNT_NOTICE)
+        self.assertIn('общей учётной записи', ACCOUNT_NOTICE)
 
     def test_invalid_values_do_not_reach_settings(self):
         for daily, output in [('1.5', '400'), ('0', '400'), ('50', '0'), ('501', '400'), ('50', '127'), ('50', '1201')]:
@@ -121,7 +124,13 @@ class WithdrawnSettingsWindowTests(unittest.TestCase):
         self.root.withdraw()
         self.settings = FakeSettings()
         self.gateway = FakeGateway(self.settings)
-        self.window = open_ai_settings(self.root, self.settings, self.gateway)
+        self.guard = mock.Mock()
+        self.guard.configured.return_value = True
+        self.guard.verify.return_value = True
+        dialog = mock.patch('cat_ai_ui.simpledialog.askstring', return_value='246810')
+        self.pin_dialog = dialog.start()
+        self.addCleanup(dialog.stop)
+        self.window = open_ai_settings(self.root, self.settings, self.gateway, parent_guard=self.guard)
         self.window.withdraw()
         self.wait_saved()
 
@@ -272,6 +281,86 @@ class WithdrawnSettingsWindowTests(unittest.TestCase):
         self.assertTrue(self.settings.data['key_configured'])
         self.assertEqual(self.window.key_var.get(), '')
         self.assertFalse(self.window._busy)
+
+    def test_denied_parent_pin_prevents_all_sensitive_saves(self):
+        self.window.key_var.set('synthetic-new-key')
+        self.window.enabled_var.set(True)
+        self.window.consent_var.set(True)
+        self.window.zdr_var.set(True)
+        self.window.reference_var.set('synthetic-approved-project')
+        self.window.daily_var.set('500')
+        self.guard.verify.return_value = False
+        self.window.save()
+        self.assertEqual(self.settings.changes, [])
+        self.assertFalse(self.window._busy)
+        self.assertEqual(self.window.key_var.get(), '')
+        self.assertIn('PIN', self.window.status_label.cget('text'))
+
+    def test_save_checks_parent_again_after_authorized_open(self):
+        self.guard.configured.return_value = False
+        previous_prompts = self.pin_dialog.call_count
+        self.window.stage_key_clear()
+        self.window.save()
+        self.assertEqual(self.settings.changes, [])
+        self.assertEqual(self.pin_dialog.call_count, previous_prompts)
+        self.assertFalse(self.window._busy)
+
+    def test_parent_pin_stays_on_tk_thread_and_out_of_worker_arguments(self):
+        ui_thread = threading.get_ident()
+        verified_threads = []
+        self.guard.verify.side_effect = lambda value: verified_threads.append(threading.get_ident()) or True
+        self.window.enabled_var.set(True)
+        with mock.patch.object(self.window, '_start') as start:
+            self.window.save()
+        self.assertEqual(verified_threads, [ui_thread])
+        args = start.call_args.args
+        self.assertEqual(args[:2], ('save', save_settings_worker))
+        self.assertNotIn('246810', str(args[2:]))
+        self.assertEqual(len(args), 5)
+
+
+class ParentPinAuthorizationTests(unittest.TestCase):
+    def setUp(self):
+        self.guard = mock.Mock()
+        self.guard.configured.return_value = True
+        self.guard.verify.return_value = True
+        self.master = SimpleNamespace(winfo_toplevel=lambda: None)
+
+    def test_missing_pin_fails_closed_without_prompt_or_toplevel(self):
+        self.guard.configured.return_value = False
+        with mock.patch('cat_ai_ui.simpledialog.askstring') as dialog:
+            with self.assertRaises(PermissionError):
+                open_ai_settings(self.master, FakeSettings(), None, parent_guard=self.guard)
+        dialog.assert_not_called()
+        self.guard.verify.assert_not_called()
+        self.guard.set_pin.assert_not_called()
+
+    def test_direct_settings_constructor_checks_authorization(self):
+        self.guard.configured.return_value = False
+        with self.assertRaises(PermissionError):
+            AiSettingsWindow(self.master, FakeSettings(), None, parent_guard=self.guard)
+
+    def test_default_guard_is_used_without_an_injected_parent(self):
+        with mock.patch('cat_ai_ui.StudyGuard', return_value=self.guard) as factory:
+            with mock.patch('cat_ai_ui.simpledialog.askstring', return_value='246810'):
+                require_parent_pin(self.master)
+        factory.assert_called_once_with()
+        self.guard.verify.assert_called_once_with('246810')
+
+    def test_cancel_or_invalid_parent_pin_fails_closed(self):
+        for pin in (None, 'bad'):
+            with self.subTest(pin=pin):
+                self.guard.verify.return_value = False
+                with mock.patch('cat_ai_ui.simpledialog.askstring', return_value=pin):
+                    with self.assertRaises(PermissionError):
+                        require_parent_pin(self.master, self.guard)
+
+    def test_verification_error_is_redacted(self):
+        self.guard.verify.side_effect = ValueError('synthetic-sensitive-pin-246810')
+        with mock.patch('cat_ai_ui.simpledialog.askstring', return_value='246810'):
+            with self.assertRaises(PermissionError) as raised:
+                require_parent_pin(self.master, self.guard)
+        self.assertNotIn('246810', str(raised.exception))
 
 
 if __name__ == '__main__':
