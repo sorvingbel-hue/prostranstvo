@@ -19,6 +19,8 @@ from browser_login_ui import BrowserLoginPanel
 from maintenance_ui import MaintenancePanel
 from security_ui import SecurityPanel
 from storage_ui import StoragePanel
+from cache_cleanup_ui import CacheCleanupPanel
+from application_removal_ui import ApplicationRemovalPanel
 LABELS={'queued':'В очереди','needs_approval':'Нужна проверка плана','running':'Выполняется','completed':'Готово','failed':'Ошибка','cancelled':'Отменено','interrupted':'Прервано'}
 class App(tk.Tk):
  def __init__(self):
@@ -110,6 +112,10 @@ class App(tk.Tk):
   self.storagepanel=StoragePanel(self.homepages)
   self.homepages.add(self.storagepanel,text='Место на дисках')
   self.storagepanel.start_polling()
+  self.cleanuppanel=CacheCleanupPanel(self.homepages,parent_guard=self.studypanel.guard)
+  self.homepages.add(self.cleanuppanel,text='Очистка кэшей')
+  self.removalpanel=ApplicationRemovalPanel(self.homepages,parent_guard=self.studypanel.guard)
+  self.homepages.add(self.removalpanel,text='Удаление программ')
  def _build_power_panel(self):
   self.powerpanel=PowerPanel(self.powertab,authorize_parent=self.studypanel.authorize_parent)
   self.powerpanel.pack(fill='both',expand=True)
@@ -117,7 +123,7 @@ class App(tk.Tk):
   self.browserloginpanel=BrowserLoginPanel(self.settingstab,authorize_parent=self.studypanel.authorize_parent)
   self.browserloginpanel.pack(fill='x',pady=(0,12))
  def destroy(self):
-  for panelname in ('securitypanel','storagepanel'):
+  for panelname in ('securitypanel','storagepanel','removalpanel'):
    panel=self.__dict__.get(panelname)
    if panel is not None:panel.close()
   maintenancepanel=self.__dict__.get('maintenancepanel')

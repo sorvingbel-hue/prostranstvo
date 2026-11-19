@@ -23,6 +23,8 @@ SELF_TEST_MODULES = (
     'session_control', 'power_control', 'power_ui', 'maintenance_advisor', 'maintenance_ui',
     'maintenance_sequence', 'storage_audit', 'system_broker',
     'storage_tasks', 'storage_ui', 'security_report', 'security_ui', 'security_mcp',
+    'cache_cleanup', 'cache_cleanup_ui',
+    'application_removal', 'application_removal_ui',
 )
 
 class GuiLock:
@@ -220,6 +222,8 @@ def main():
         import session_control, power_control, power_ui, maintenance_advisor, maintenance_ui
         import maintenance_sequence, storage_audit, system_broker
         import storage_tasks, storage_ui, security_report, security_ui, security_mcp
+        import cache_cleanup, cache_cleanup_ui
+        import application_removal, application_removal_ui
         for module in SELF_TEST_MODULES:
             importlib.import_module(module)
         tk_version = None

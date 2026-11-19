@@ -31,6 +31,8 @@ SOURCES += ['browser_session.py', 'browser_login_ui.py']
 SOURCES += ['maintenance_advisor.py', 'maintenance_ui.py', 'maintenance_sequence.py']
 SOURCES += ['storage_audit.py']
 SOURCES += ['storage_tasks.py', 'storage_ui.py', 'security_report.py', 'security_ui.py', 'security_mcp.py']
+SOURCES += ['cache_cleanup.py', 'cache_cleanup_ui.py']
+SOURCES += ['application_removal.py', 'application_removal_ui.py']
 
 MINIMUM_PYTHON_PATCH = 18
 FROZEN_CHECK_TIMEOUT = 45
@@ -202,7 +204,7 @@ def main():
     shutil.copy2(PRODUCT / 'docs' / 'AGENT-CONTROL-RU.txt', stage / 'AGENT-CONTROL-RU.txt')
     shutil.copy2(PRODUCT / 'docs' / 'WINDOWS-HEALTH-RU.txt', stage / 'WINDOWS-HEALTH-RU.txt')
     shutil.copy2(PRODUCT / 'docs' / 'STORAGE-AUDIT-RU.txt', stage / 'STORAGE-AUDIT-RU.txt')
-    for name in ('SECURITY-REPORT-RU.txt', 'SECURITY-CHANNEL-RU.txt', 'STORAGE-TASKS-RU.txt', 'PRODUCT-ROADMAP-RU.md', 'RELEASE-PYTHON-RUNTIME-RU.txt'):
+    for name in ('SECURITY-REPORT-RU.txt', 'SECURITY-CHANNEL-RU.txt', 'STORAGE-TASKS-RU.txt', 'CACHE-CLEANUP-RU.txt', 'APPLICATION-REMOVAL-RU.txt', 'OFFLINE-FAMILY-SCENARIOS-RU.md', 'PRODUCT-ROADMAP-RU.md', 'RELEASE-PYTHON-RUNTIME-RU.txt'):
         shutil.copy2(PRODUCT / 'docs' / name, stage / name)
     licenses = stage / 'licenses'
     licenses.mkdir()

@@ -54,7 +54,7 @@ def require_parent_pin(master, guard=None):
     pin = None
     try:
         pin = simpledialog.askstring(
-            'Настройки ИИ · для родителей', 'Введите PIN родителя.',
+            'Подтверждение родителя', 'Введите PIN родителя.',
             show='•', parent=master.winfo_toplevel(),
         )
         if pin is None:

@@ -1,36 +1,27 @@
-# Independent QA - current source snapshot 0.1.17
+# Independent QA - current source snapshot 0.1.19
 
-Current source-QA baseline: 19 November 2026. This source-only update is relative to the accepted 0.1.16 QA tree. It does not publish installers, replace an installed family computer or establish completion of the entire concept.
+Current source-QA baseline: 19 November 2026. This source-only candidate 0.1.19 updates the accepted 0.1.17 QA tree. It publishes no installers or private machine configuration and does not establish completion of the entire product concept.
 
-- Build baseline remains final CPython 3.13.x patch 18 or later with Tk; recorded packaging tool PyInstaller 6.22.3. The privately checked 0.1.17 runtime reports CPython 3.13.18, OpenSSL 3.5.9, SQLite 3.53.1 and zlib 1.3.2.
-- Current Windows LocalProduct suite: 1101 run, 1096 successful, 5 skipped, 113.214 seconds. It executed on a newly created non-input QA desktop, checked before importing Tk/tests. The input desktop remained Default before/after; no desktop switch or input injection occurred. This scopes GUI execution, not OS/account/registry/service isolation or a real family workflow.
-- Separate LearningModule result remains 67 successful on the same runtime; that module did not change.
-- Private 0.1.17 package no-GUI install/upgrade and MCP checks passed (23 general + 3 family + 2 restricted tools). Actual frozen hidden Tk 8.6.15 and source hidden App checks passed separately.
-- The actual isolated frozen storage worker passed on two owned fixture files, 37 bytes total, both preserved, without Python on the child PATH. Polling observed queued/completed without EACCES harness retries; running was not observed. Packaged TTS generated a 228374-byte WAV in memory without playback or microphone use; this is not audibility.
-- New source requires the configured parent PIN before enabling the external pet API, opening AI settings and each settings save. Offline remains selectable without PIN. The PIN stays in the UI handler, not the worker/API/log. A shared administrator account can still bypass this UI boundary outside the application.
-- General MCP reads at most 1 MiB characters plus one sentinel character per line. Oversized input returns one protocol error and closes without parsing a following suffix. Portable source exposes no SYSTEM maintenance tool.
-- The separate personal MCP route rejects repair/cleanup before its broker and advertises only diagnostics/health/scan. That private route is not published here; the SYSTEM service/pipe and already cached MCP processes are not changed by this source update.
-- The 0.1.16 mandatory-byte-lock fix and real-process regressions remain. Earlier 0.1.15 passing checks did not cover the subsequently discovered lock race.
-- Still open: actual Study/PIN recovery and Windows sign-in/reboot, child-account setup/use, live voice/API/Telegram/browser login, clean-machine install/upgrade/uninstall and native dependency/license mapping. Other independent review findings remain review work.
-- Percentage scoring, reward wallets, savings goals, full curriculum, phone/multi-PC products and a universal AI shield are not completed features.
+- Windows LocalProduct source suite: 1196 run, 1190 successful, 6 skipped, 128.529 seconds. The child verified its own non-input QA desktop before GUI imports; the input desktop remained Default, with no desktop switch or input injection. This scopes test GUI execution, not OS/account/service isolation or household end-to-end acceptance.
+- The bounded application manager discovers registered applications only on explicit Refresh. It prepares exact plans for a registered Steam uninstall URI, a strict Windows Installer product GUID or manual Installed Apps settings. Confirming the plan and parent PIN precedes a native-window request. Opening a window is not a removal result; verification distinguishes registration absence, remaining files and incomplete/uncertain observations. No real application was uninstalled in this acceptance run.
+- Protected, policy-held and unsupported entries cannot dispatch. The private acceptance configuration retained six local policy holds; their identities, paths and records are excluded from this source update. No universal SYSTEM delete/shell permission, forced process termination or recursive portable-folder fallback was added. The PIN is a UI boundary in a shared Windows account, not OS isolation from that account's own code.
+- Scoped current-user shader-cache cleanup retains preview, exact approval, fresh HANDLE identity checks, busy/read-only/reparse/hardlink skips and write-ahead receipts. It is not a general file or application deletion endpoint. Reported/logical sizes and observed free space remain separate.
+- Existing Study duration 0 persists an until-parent-cancel lease without a fabricated future expiry. That source capability already existed in earlier packages; a separate personal deployment refresh is outside this public source change. Reboot/sign-in and separate child-account acceptance remain open. After-school/offline scenarios are a concept document, not an enabled scheduler.
+- Build baseline remains final CPython 3.13.x patch 18 or later with Tk; recorded PyInstaller 6.22.3. Runtime/dependency provenance and remaining licensing limits are documented separately. Tests do not establish absence of vulnerabilities or permission to redistribute every dependency.
+- Candidate binaries stay private. The previous 0.1.18 installer/portable archives remain available locally as fallback. Clean-machine installation/update/uninstall, actual native application removal, remaining security findings, licensing and family-account acceptance are open gates.
+- LearningModule and unrelated repository files are preserved. Earlier independent module results are historical and are not added to the current LocalProduct test total. Reward wallets, full curriculum, multi-PC/phone products and universal BIOS/root protection are not completed features.
 
-Read [current QA](QA.md), [scope/release gates](LocalProduct/docs/PRODUCT-ROADMAP-RU.md), [runtime provenance and remaining license limits](LocalProduct/docs/RELEASE-PYTHON-RUNTIME-RU.txt), [AI/PIN scope](LocalProduct/docs/CAT-AI-RU.txt), [maintenance boundaries](LocalProduct/docs/WINDOWS-HEALTH-RU.txt), and [restricted security channel](LocalProduct/docs/SECURITY-CHANNEL-RU.txt).
+Read [application-removal scope](LocalProduct/docs/APPLICATION-REMOVAL-RU.txt), [cache-cleanup scope](LocalProduct/docs/CACHE-CLEANUP-RU.txt), [offline scenario concept](LocalProduct/docs/OFFLINE-FAMILY-SCENARIOS-RU.md), [release gates](LocalProduct/docs/PRODUCT-ROADMAP-RU.md), and [runtime provenance/license limits](LocalProduct/docs/RELEASE-PYTHON-RUNTIME-RU.txt).
 
-The runtime-only build probe checks loaded metadata before resources are copied, separately from package/Tk/end-to-end checks. Passing tests alone proves neither universal safety nor exploitability. Public source availability does not grant a new redistribution license.
+Review exact catalog identity, fresh protection/hold checks, authenticated plan/receipt reuse, timeout and changed-executable paths, and no second dispatch after uncertainty. Use disposable providers and mocked openers. The source UI tests use withdrawn Tk and mock confirmations/PIN; they must not open a real uninstaller. Failed fixture cleanup must still destroy and release Tcl objects on the owning thread before later worker GC.
 
-Review the AI PIN failure/cancel/unconfigured paths before worker/save; no PIN may reach a worker or log. Bounded MCP tests execute real runpy dispatch over fake executor/broker: this is protocol evidence, not live SYSTEM execution. Portable assertions remain meaningful without the optional private backend.
-
-The retained file-locking regression always exercises the public portable backend and adds the private legacy backend only when present. Windows contention cases use a real hidden holder and native refusal barrier, not simulated PermissionError or outer harness retries. Empty and preexisting one-byte lock files must remain unchanged.
-
-Priority review: allowed roots/changed files/collisions/receipts/recovery; durable PIN and approval bound to the correct lease; sanitized report unknown/freshness states; job ownership/cancellation/committed metadata; and runtime/version/license provenance. Use disposable fixtures. New family-flow cases use withdrawn Tk, real local stores and a fake desktop, not real sign-in/reboot/window enforcement.
-
-Record the reviewed Git commit SHA. Do not connect real accounts, alter real startup/services, activate Study on a family computer, or run destructive file actions during unattended source QA. No general BIOS/root capability, stealth behavior or absolute protection is claimed. A PIN in a shared administrator account is not an OS security boundary.
+Do not invoke real registered uninstallers, alter user policy holds, connect real accounts, activate Study, or change services/startup during unattended source QA. Existing independent review findings outside this delta remain open. Record the exact Git commit reviewed and distinguish source tests from real Windows acceptance. No private service or cached installed process is refreshed by publishing this source packet.
 
 ---
 
 ## Retained historical notes and dated QA
 
-The material below belongs to earlier snapshots through 18 November. Earlier beta 0.1.12 and pending-build statements are historical, superseded by the 0.1.17 source-QA summary above. Historical results are not added to the current test totals. Historical commands using generic Python 3.13 must now satisfy the final 3.13.18+ build floor.
+The material below belongs to earlier snapshots through 18 November. Earlier beta 0.1.12 and pending-build statements are historical, superseded by the 0.1.19 source-QA summary above. Historical results are not added to the current test totals. Historical commands using generic Python 3.13 must now satisfy the final 3.13.18+ build floor.
 
 # Independent QA / review guide
 

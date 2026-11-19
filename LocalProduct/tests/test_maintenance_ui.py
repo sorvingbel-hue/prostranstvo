@@ -184,31 +184,43 @@ class AppMaintenanceIntegrationTests(unittest.TestCase):
         panel_factory = mock.Mock()
         security_factory = mock.Mock()
         storage_factory = mock.Mock()
+        cleanup_factory = mock.Mock()
+        removal_factory = mock.Mock()
         fake_base = type('Base', (), {'destroy': mock.Mock()})
         sandbox = {'ttk': fake_ttk, 'MaintenancePanel': panel_factory,
-                   'SecurityPanel': security_factory, 'StoragePanel': storage_factory, 'Base': fake_base}
+                   'SecurityPanel': security_factory, 'StoragePanel': storage_factory,
+                   'CacheCleanupPanel': cleanup_factory,
+                   'ApplicationRemovalPanel': removal_factory, 'Base': fake_base}
         wrapper = ast.ClassDef(name='App', bases=[ast.Name(id='Base', ctx=ast.Load())],
                                keywords=[], body=methods, decorator_list=[])
         module = ast.fix_missing_locations(ast.Module(body=[wrapper], type_ignores=[]))
         exec(compile(module, str(source), 'exec'), sandbox)
         app = sandbox['App']()
         app.home = object()
+        app.studypanel = SimpleNamespace(guard=object())
         app._build_home_pages()
         fake_ttk.Notebook.assert_called_once_with(app.home)
         self.assertEqual([call.kwargs['text'] for call in app.homepages.add.call_args_list],
-                         ['Обзор', 'Диагностика и ИИ', 'Безопасность', 'Место на дисках'])
+                         ['Обзор', 'Диагностика и ИИ', 'Безопасность', 'Место на дисках', 'Очистка кэшей', 'Удаление программ'])
         panel_factory.assert_called_once_with(app.maintenancetab)
         app.maintenancepanel.start_polling.assert_called_once_with()
         security_factory.assert_called_once_with(app.homepages)
         storage_factory.assert_called_once_with(app.homepages)
+        cleanup_factory.assert_called_once_with(app.homepages,parent_guard=app.studypanel.guard)
+        removal_factory.assert_called_once_with(app.homepages,parent_guard=app.studypanel.guard)
         app.securitypanel.start_polling.assert_called_once_with()
         app.storagepanel.start_polling.assert_called_once_with()
         app.securitypanel.collect_report.assert_not_called()
         app.storagepanel.start_audit.assert_not_called()
+        app.cleanuppanel.analyze.assert_not_called()
+        app.cleanuppanel.clear.assert_not_called()
+        app.removalpanel.refresh.assert_not_called()
+        app.removalpanel.request_removal.assert_not_called()
         app.destroy()
         app.maintenancepanel.close.assert_called_once_with()
         app.securitypanel.close.assert_called_once_with()
         app.storagepanel.close.assert_called_once_with()
+        app.removalpanel.close.assert_called_once_with()
         fake_base.destroy.assert_called_once_with()
 
 
