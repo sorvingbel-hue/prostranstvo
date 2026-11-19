@@ -6,6 +6,10 @@ import sys
 from family_bridge import FamilyBridge
 from family_telegram import TelegramError
 
+# One request line, in characters (same contract as mcp_server/security_mcp): the line is
+# read with a bound, never buffered whole; a longer line ends the session after one error.
+MAX_REQUEST_CHARS = 1024 * 1024
+
 TOOLS = [
     {'name': 'family_channel_status', 'description': 'Проверить подключение фиксированного Telegram родителя без раскрытия токена и переписки.',
      'inputSchema': {'type': 'object', 'properties': {}, 'additionalProperties': False},
@@ -38,6 +42,11 @@ def call(bridge, name, arguments):
         return bridge.message_status(arguments['message_id'])
     raise ValueError('unknown_tool_or_arguments')
 
+def _close_with_error(output_stream, code, message):
+    output_stream.write(json.dumps({'jsonrpc': '2.0', 'id': None, 'error': {'code': code, 'message': message}}) + '\n')
+    output_stream.flush()
+
+
 def main(input_stream=None, output_stream=None, bridge=None):
     input_stream = input_stream or sys.stdin
     output_stream = output_stream or sys.stdout
@@ -45,11 +54,19 @@ def main(input_stream=None, output_stream=None, bridge=None):
     for stream in (input_stream, output_stream):
         if hasattr(stream, 'reconfigure'):
             stream.reconfigure(encoding='utf-8')
-    for line in input_stream:
+    while True:
+        try:
+            line = input_stream.readline(MAX_REQUEST_CHARS + 1)
+        except (OSError, UnicodeError, ValueError):
+            _close_with_error(output_stream, -32700, 'Parse error')  # invalid UTF-8 etc.: fail closed
+            return
+        if not line:
+            return
+        if len(line) > MAX_REQUEST_CHARS:
+            _close_with_error(output_stream, -32600, 'Request too large')  # no suffix is interpreted
+            return
         request = None
         try:
-            if len(line) > 1024 * 1024:
-                raise ValueError('request_too_large')
             request = json.loads(line)
             if not isinstance(request, dict):
                 raise ValueError('invalid_request')
