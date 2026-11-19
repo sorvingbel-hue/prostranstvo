@@ -1,11 +1,13 @@
-# Prostranstvo - source QA snapshot 0.1.15
+# Prostranstvo - source QA snapshot 0.1.16
 
 Current source-QA baseline: 19 November 2026. This update contains source only. It does not publish binaries, alter an installed family computer, or establish completion of the full product concept.
 
 - Build baseline: final CPython 3.13.x, patch 18 or later, with Tk. Recorded packaging tool: PyInstaller 6.22.3 (pinned build requirements).
-- Privately checked candidate 0.1.15: CPython 3.13.18, OpenSSL 3.5.9, SQLite 3.53.1, zlib 1.3.2; actual frozen hidden-Tk check: Tk 8.6.15.
-- Recorded Windows LocalProduct run: 1080 tests, 1075 successful, 5 skipped, 98.093 seconds. Separate LearningModule run: 67 successful. These counts are not evidence of a live parent/child workflow.
+- Privately checked candidate 0.1.16: CPython 3.13.18, OpenSSL 3.5.9, SQLite 3.53.1, zlib 1.3.2; actual frozen hidden-Tk check: Tk 8.6.15.
+- Recorded Windows LocalProduct run: 1083 tests, 1078 successful, 5 skipped, 96.878 seconds. Separate LearningModule run: 67 successful. These counts are not evidence of a live parent/child workflow.
 - Private package no-GUI verification passed, including isolated install/upgrade and runtime checks. Restricted MCP and frozen worker checks remain distinct from real Windows acceptance. Installers, personal profiles, credentials and runtime logs are not part of this source update.
+- A further real frozen-worker check after 0.1.15 found a Windows mandatory-byte-lock initialization race. Version 0.1.16 removes the pre-lock byte read/write and adds real cross-process locking regressions; prior passing suites did not cover that scenario.
+- Actual 0.1.16 frozen worker passed on two owned fixture files (37 bytes total), both preserved. Parent status observed queued/completed without EACCES retries; running was not an observed state. Source-widget and in-memory TTS checks also passed; in-memory TTS is not proof of audible playback.
 - Added source includes sanitized security reports and a restricted two-tool channel, metadata-only storage jobs/UI, file rollback regression, runtime preflight and isolated family workflow checks.
 - Still open: real Study/PIN recovery and Windows sign-in/reboot; separate child-account setup/use; live microphone/audibility, API, Telegram and deliberate browser login; clean-machine install/upgrade/uninstall; complete native-component/license mapping.
 - LearningModule remains a limited fraction-addition prototype. Percentage scoring, reward wallets, savings goals, phone products, multi-PC networking and a universal AI shield are not completed features.
@@ -18,7 +20,7 @@ The fixed runtime-only build probe checks loaded metadata before assets are copi
 
 ## Retained historical notes and dated QA
 
-The material below belongs to earlier snapshots through 18 November. Earlier beta 0.1.12 and pending-build statements are historical, superseded by the 0.1.15 source-QA summary above. Historical results are not added to the current test totals. Historical commands using generic Python 3.13 must now satisfy the final 3.13.18+ build floor.
+The material below belongs to earlier snapshots through 18 November. Earlier beta 0.1.12 and pending-build statements are historical, superseded by the 0.1.16 source-QA summary above. Historical results are not added to the current test totals. Historical commands using generic Python 3.13 must now satisfy the final 3.13.18+ build floor.
 
 # Пространство / Prostranstvo
 
