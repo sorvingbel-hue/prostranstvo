@@ -293,7 +293,8 @@ runpy.run_path(str(Path(sys.argv[1])/'mcp_server.py'),run_name='__main__')
                                 'agent_apps_status', 'prepare_app_launch', 'launch_agent_app',
                                 'prepare_browser_background', 'agent_browser_status', 'agent_browser_open',
                                 'agent_browser_snapshot', 'agent_browser_click', 'agent_browser_fill',
-                                'agent_browser_close', 'lock_computer', 'power_status', 'prepare_power_action'})
+                                'agent_browser_close', 'lock_computer', 'power_status', 'prepare_power_action',
+                                'collect_maintenance_report', 'get_maintenance_report', 'submit_maintenance_advice'})
         self.assertTrue(responses[2]['result']['isError'])
         app_status = json.loads(responses[3]['result']['content'][0]['text'])
         self.assertTrue(app_status['this_call_starts_nothing'])

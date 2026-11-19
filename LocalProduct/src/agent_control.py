@@ -23,6 +23,12 @@ TOOLS = [
     _tool('prepare_power_action', 'Validate a restart/shutdown proposal only. Execution requires confirmation and parent PIN in the Power tab.',
           {'action': {'type': 'string', 'enum': ['restart', 'shutdown']},
            'delay_seconds': {'type': 'integer', 'minimum': 1, 'maximum': 86400}}, ('action',)),
+    _tool('collect_maintenance_report', 'Collect bounded technical facts into a local sanitized report. No scan, repair, deletion, network or AI API execution.'),
+    _tool('get_maintenance_report', 'Read the latest sanitized technical report for AI analysis. Does not collect facts or execute actions.'),
+    _tool('submit_maintenance_advice', 'Save unverified AI observations for the exact report ID. Action IDs are recommendations only; no Windows action is executed.',
+          {'report_id': {'type': 'string'}, 'observations': {'type': 'array', 'items': {'type': 'string'}, 'maxItems': 12},
+           'action_ids': {'type': 'array', 'items': {'type': 'string', 'enum': ['review_storage', 'review_startup', 'run_security_scan', 'run_system_health', 'review_updates', 'review_component_repair', 'review_component_cleanup']}, 'maxItems': 7}},
+          ('report_id', 'observations', 'action_ids')),
 ]
 TOOL_NAMES = frozenset(tool['name'] for tool in TOOLS)
 SCHEMAS = {tool['name']: tool['inputSchema'] for tool in TOOLS}
@@ -48,4 +54,12 @@ def call(name, arguments):
         return dict(plan(arguments['action'], arguments.get('delay_seconds', 60)),
                     status='proposal_only', scheduled=False,
                     next_step='Confirm in the Power tab with parent PIN')
+    if name in ('collect_maintenance_report', 'get_maintenance_report', 'submit_maintenance_advice'):
+        from maintenance_advisor import MaintenanceAdvisor
+        advisor = MaintenanceAdvisor()
+        if name == 'collect_maintenance_report':
+            return advisor.collect()
+        if name == 'get_maintenance_report':
+            return advisor.ai_report()
+        return advisor.submit_advice(arguments['report_id'], arguments['observations'], arguments['action_ids'])
     raise ValueError('unknown_agent_control')

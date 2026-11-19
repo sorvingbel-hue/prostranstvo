@@ -16,6 +16,7 @@ from rules_ui import RulePanel
 from archive_ui import ArchivePanel
 from power_ui import PowerPanel
 from browser_login_ui import BrowserLoginPanel
+from maintenance_ui import MaintenancePanel
 LABELS={'queued':'В очереди','needs_approval':'Нужна проверка плана','running':'Выполняется','completed':'Готово','failed':'Ошибка','cancelled':'Отменено','interrupted':'Прервано'}
 class App(tk.Tk):
  def __init__(self):
@@ -50,8 +51,9 @@ class App(tk.Tk):
   self.historypanel=BrowserHistoryPanel(self.historytab);self.historypanel.pack(fill='both',expand=True)
   ttk.Button(self.messagestab,text='Запустить котёнка на рабочем столе',command=self.open_kitten).pack(anchor='w',pady=(0,8))
   self.messagespanel=FamilyMessagesPanel(self.messagestab);self.messagespanel.pack(fill='both',expand=True)
-  self.homeText=tk.Text(self.home,wrap='word',font=('Segoe UI',12),bg='white',relief='flat',padx=18,pady=18,height=17);self.homeText.pack(fill='both',expand=True)
-  bar=ttk.Frame(self.home);bar.pack(fill='x',pady=12)
+  self._build_home_pages()
+  self.homeText=tk.Text(self.homesummary,wrap='word',font=('Segoe UI',12),bg='white',relief='flat',padx=18,pady=18,height=17);self.homeText.pack(fill='both',expand=True)
+  bar=ttk.Frame(self.homesummary);bar.pack(fill='x',pady=12)
   ttk.Button(bar,text='Обновить состояние',command=self.refresh_home).pack(side='left')
   ttk.Button(bar,text='Открыть локальные данные',command=lambda:os.startfile(str(DATA_ROOT))).pack(side='left',padx=8)
   bar=ttk.Frame(self.tasks);bar.pack(fill='x')
@@ -91,6 +93,15 @@ class App(tk.Tk):
   if '--messages' in sys.argv:self.tabs.select(self.messagestab)
   self.refresh_home();self.refresh();threading.Thread(target=self.worker,daemon=True).start();self.after(1500,self.tick)
  def report_error(self,e):messagebox.showerror('Операция не выполнена',str(e))
+ def _build_home_pages(self):
+  self.homepages=ttk.Notebook(self.home);self.homepages.pack(fill='both',expand=True)
+  self.homesummary=ttk.Frame(self.homepages)
+  self.maintenancetab=ttk.Frame(self.homepages)
+  self.homepages.add(self.homesummary,text='Обзор')
+  self.homepages.add(self.maintenancetab,text='Диагностика и ИИ')
+  self.maintenancepanel=MaintenancePanel(self.maintenancetab)
+  self.maintenancepanel.pack(fill='both',expand=True)
+  self.maintenancepanel.start_polling()
  def _build_power_panel(self):
   self.powerpanel=PowerPanel(self.powertab,authorize_parent=self.studypanel.authorize_parent)
   self.powerpanel.pack(fill='both',expand=True)
@@ -98,6 +109,8 @@ class App(tk.Tk):
   self.browserloginpanel=BrowserLoginPanel(self.settingstab,authorize_parent=self.studypanel.authorize_parent)
   self.browserloginpanel.pack(fill='x',pady=(0,12))
  def destroy(self):
+  maintenancepanel=self.__dict__.get('maintenancepanel')
+  if maintenancepanel is not None:maintenancepanel.close()
   panel=self.__dict__.get('powerpanel')
   if panel is not None:panel.close()
   loginpanel=self.__dict__.get('browserloginpanel')

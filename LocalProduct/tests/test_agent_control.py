@@ -44,3 +44,12 @@ class AgentControlTests(unittest.TestCase):
             self.assertEqual(agent_control.call('power_status', {}), {'state': 'idle'})
         control.return_value.schedule.assert_not_called()
         control.return_value.start_worker.assert_not_called()
+
+    def test_maintenance_advice_only_routes_to_advisory_store(self):
+        with patch('maintenance_advisor.MaintenanceAdvisor') as advisor:
+            advisor.return_value.submit_advice.return_value = {'fixture': True}
+            value = agent_control.call('submit_maintenance_advice', {
+                'report_id': 'a' * 32, 'observations': ['Inspect free space'], 'action_ids': ['review_storage']})
+        self.assertEqual(value, {'fixture': True})
+        advisor.return_value.submit_advice.assert_called_once_with('a' * 32, ['Inspect free space'], ['review_storage'])
+        advisor.return_value.collect.assert_not_called()

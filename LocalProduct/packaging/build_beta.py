@@ -22,6 +22,7 @@ SOURCES = ['app.py', 'daily_plan.py', 'daily_plan_ui.py', 'daily_plan_animation.
 SOURCES += ['application_launcher.py', 'browser_access.py', 'agent_apps.py']
 SOURCES += ['headless_browser.py', 'agent_control.py', 'parent_apps.py', 'session_control.py', 'power_control.py', 'power_ui.py']
 SOURCES += ['browser_session.py', 'browser_login_ui.py']
+SOURCES += ['maintenance_advisor.py', 'maintenance_ui.py', 'maintenance_sequence.py']
 
 def run(args):
     subprocess.run([str(x) for x in args], check=True, cwd=PRODUCT)
@@ -72,6 +73,7 @@ def main():
     for name in ['START-HERE-RU.txt', 'CODEX-SETUP-RU.txt', 'PRIVACY-LOCAL.txt', 'CHANGELOG-RU.txt', 'FAMILY-PET-CHAT-RU.txt', 'STUDY-MODE-RU.txt', 'FILES-RULES-ARCHIVES-RU.txt', 'KITTEN-RU.txt', 'KITTEN-TRICKS-RU.txt', 'KITTEN-REUSE-RESEARCH-RU.txt', 'KITTEN-ART-PROMPT.txt', 'KITTEN-ART-V2-PROMPTS.txt', 'OFFLINE-SPEECH-RU.txt', 'CHILD-DIALOGUE-SOURCES-RU.txt', 'CAT-AI-RU.txt']:
         shutil.copy2(PRODUCT / 'docs' / name, stage / name)
     shutil.copy2(PRODUCT / 'docs' / 'AGENT-CONTROL-RU.txt', stage / 'AGENT-CONTROL-RU.txt')
+    shutil.copy2(PRODUCT / 'docs' / 'WINDOWS-HEALTH-RU.txt', stage / 'WINDOWS-HEALTH-RU.txt')
     licenses = stage / 'licenses'
     licenses.mkdir()
     python_base = Path(sys.base_prefix)
