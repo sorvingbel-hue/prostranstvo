@@ -233,7 +233,7 @@ CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY,at TEXT,job TEXT,messag
   src=self.checked(r['src']);dst=self.checked(r['dst']);self.checked(dst.parent,True)
   no_alternate_streams(src)
   if os.path.lexists(dst):raise ValueError('Цель уже существует: '+str(dst))
-  tmp=dst.parent/('.companion-'+j+'-'+str(n)+'.partial');created=False;c=None;source=None;marked=False;removed=False;committed=False
+  tmp=dst.parent/('.companion-'+j+'-'+str(n)+'.partial');created=False;c=None;source=None;marked=False;removed=False;committed=False;receipt=False
   try:
    source=locked_file(src,mode=='move')
    st=os.fstat(source.fileno())
@@ -251,6 +251,7 @@ CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY,at TEXT,job TEXT,messag
    created=True
    if digest(dst)!=r['sha']:raise ValueError('Проверка копии не пройдена')
    with self.connect() as own:own.execute('INSERT INTO receipts VALUES(?,?,?,?,?,?,?,?)',(j,n,str(src),str(dst),r['sha'],r['stamp']['size'],r['index_id'],'copied'))
+   receipt=True
    if mode=='move':
     c=self.index_connection(True)
     if c:c.execute('BEGIN IMMEDIATE')
@@ -272,6 +273,12 @@ CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY,at TEXT,job TEXT,messag
     shutil.copystat(dst,src)
     if digest(src)==r['sha']:removed=False
    if created and not removed and not committed and dst.exists() and digest(dst)==r['sha']:dst.unlink()
+   if receipt and not committed:
+    # A verified rollback must not stay 'copied': recover() would report it for manual review forever.
+    try:
+     if src.is_file() and not os.path.lexists(dst) and digest(src)==r['sha']:
+      with self.connect() as own:own.execute("UPDATE receipts SET state='rolled_back' WHERE job=? AND n=? AND state='copied'",(j,n))
+    except (OSError,sqlite3.Error):pass
    self.event(j,'Операция прервана; квитанция сохранена')
    raise
   finally:
