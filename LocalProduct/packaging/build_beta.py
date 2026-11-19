@@ -23,6 +23,7 @@ SOURCES += ['application_launcher.py', 'browser_access.py', 'agent_apps.py']
 SOURCES += ['headless_browser.py', 'agent_control.py', 'parent_apps.py', 'session_control.py', 'power_control.py', 'power_ui.py']
 SOURCES += ['browser_session.py', 'browser_login_ui.py']
 SOURCES += ['maintenance_advisor.py', 'maintenance_ui.py', 'maintenance_sequence.py']
+SOURCES += ['storage_audit.py']
 
 def run(args):
     subprocess.run([str(x) for x in args], check=True, cwd=PRODUCT)
@@ -74,6 +75,7 @@ def main():
         shutil.copy2(PRODUCT / 'docs' / name, stage / name)
     shutil.copy2(PRODUCT / 'docs' / 'AGENT-CONTROL-RU.txt', stage / 'AGENT-CONTROL-RU.txt')
     shutil.copy2(PRODUCT / 'docs' / 'WINDOWS-HEALTH-RU.txt', stage / 'WINDOWS-HEALTH-RU.txt')
+    shutil.copy2(PRODUCT / 'docs' / 'STORAGE-AUDIT-RU.txt', stage / 'STORAGE-AUDIT-RU.txt')
     licenses = stage / 'licenses'
     licenses.mkdir()
     python_base = Path(sys.base_prefix)
