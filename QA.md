@@ -1,5 +1,13 @@
 # Independent QA - current source snapshot 0.1.20
 
+## Additional v2 family-controller verification — 20 November 2026 UTC
+
+- Eight `test_family_workflow.py` scenarios passed on Windows/CPython 3.13.18, with zero skips, failures or errors. Two new scenarios compose the daily repeat/history, real temporary PIN/store and persistent Study-controller paths.
+- Verified next-day reset and archived submission; late approval credits 30 XP exactly once without stopping today's lease; today's own approval adds another 30 XP and ends only its bound lease. Recreated controllers preserve failed PIN attempts; wrong PIN cannot review, change confirmed XP or stop Study.
+- These are withdrawn Tk callbacks and temporary data, with a fake empty desktop and mocked startup/dialog/indicator adapters. Real window operations, registry registration, network and external launch paths are forbidden by the fixture. The child ran on an owned non-input QA desktop; input desktop stayed Default with no switching or input injection.
+- Eight tracked domestic state-file existence/hash observations were unchanged before/after. This is bounded evidence for those files, not a claim of complete machine isolation.
+- Product runtime and private package remain 0.1.20; this delta changes only tests and this QA note. The earlier full-suite totals below are historical for the preceding source snapshot and were not rerun for this test-only delta. Observed family interaction, reboot/sign-in and clean-machine acceptance remain open.
+
 Current source-QA baseline: candidate 0.1.20, 19 November 2026 (Pacific time). This source-only update adds the daily-board changes to the accepted QA tree. It includes no installers, private profiles or personal daily-plan data, and does not establish completion of the whole product concept.
 
 - Windows LocalProduct source suite: 1228 run, 1222 successful, 6 skipped, 141.620 seconds. The child verified its own non-input Windows QA desktop before GUI imports; the input desktop remained Default, without desktop switching or injected input. This was a real Windows desktop, not a VM or OS/account/service isolation, and is not household end-to-end acceptance.

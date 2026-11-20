@@ -3,6 +3,8 @@
 This is controller integration, not live Windows/family acceptance. All profile
 data and PINs are temporary. Startup registration, indicators, scheduled polling,
 native desktop ownership, external launches and network access are excluded.
+Version-2 recurrence/history checks include real persisted PIN attempts, late
+approval credits and session-scoped completion across reopened controllers.
 """
 
 import sys
@@ -10,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 
-from datetime import date
+from datetime import date, timedelta
 import secrets
 import tempfile
 import tkinter as tk
@@ -325,6 +327,137 @@ class FamilyWorkflowTests(unittest.TestCase):
         self.assertEqual(self._store().read()['status'], 'approved')
         self.assertIsNone(self._resume().read())
         self.assertFalse(self.study.session.active)
+
+    def test_repeated_day_late_review_credits_once_and_preserves_today_study(self):
+        initial = self.store.read()
+        self.store.publish(
+            [task['text'] for task in initial['tasks']], initial['game_minutes'],
+            expected_revision=initial['revision'], repeat_daily=True,
+        )
+        self.plan.refresh()
+        old_lease = self._start()
+        self._submit()
+        yesterday = self._store().read()
+
+        self.day += timedelta(days=1)
+        self.clock.advance(24 * 60 * 60)
+        self.plan.refresh()
+        today = self._store().read()
+        self.assertEqual(today['date'], self.day.isoformat())
+        self.assertEqual(today['status'], 'open')
+        self.assertTrue(all(task['status'] == 'pending' for task in today['tasks']))
+        self.assertNotIn('study_session_id', today)
+        self.assertEqual(self._store().history(), [yesterday])
+        self.assertEqual(self.plan.steve_progress['total_points'], 0)
+        self.assertEqual(self.plan.steve_progress['provisional_points'], 0)
+        self.assertEqual(self._store().snapshot(yesterday['date'])[1]['provisional_points'], 30)
+
+        # Expire the previous real persisted lease before requesting a new one.
+        self.study._sync_lease()
+        self.assertFalse(self.study.session.active)
+        self.assertIsNone(self._resume().read())
+        new_lease = self._start()
+        self.assertNotEqual(new_lease['session_id'], old_lease['session_id'])
+        with mock.patch('study_ui.simpledialog.askstring', return_value=self.pin) as prompt:
+            self.plan.history_button.invoke()
+        prompt.assert_called_once()
+        self.assertEqual(self.plan.plan, yesterday)
+        self.assertEqual(self.plan._selected_date, yesterday['date'])
+
+        self._approve()
+
+        approved_yesterday = self._store().read(yesterday['date'])
+        self.assertEqual(approved_yesterday['status'], 'approved')
+        self.assertEqual(approved_yesterday['study_session_id'], old_lease['session_id'])
+        self.assertEqual(self._store().read(), today)
+        self.assertEqual(self._store().progress()['total_points'], 30)
+        self.assertEqual(self._resume().read(), new_lease)
+        self.assertTrue(self.study.session.active)
+        self.assertEqual(self.study.active_study_id(), new_lease['session_id'])
+        self.assertEqual(self.plan.play_button.winfo_manager(), '')
+        self.assertTrue(self.plan.approve_button.instate(['disabled']))
+        self.plan.approve_button.invoke()
+        self.assertEqual(self._store().progress()['total_points'], 30)
+        self.assertEqual(self._resume().read(), new_lease)
+
+        self.plan.today_button.invoke()
+        self.assertEqual(self.plan.plan, today)
+        self._submit()
+        self.assertEqual(self._store().read()['study_session_id'], new_lease['session_id'])
+        self._approve()
+        self.assertEqual(self._store().progress()['total_points'], 60)
+        self.assertEqual(self._store().read()['status'], 'approved')
+        self.assertEqual(self._store().read(yesterday['date']), approved_yesterday)
+        self.assertIsNone(self._resume().read())
+        self.assertFalse(self.study.session.active)
+        self.assertEqual(self.plan.play_button.winfo_manager(), 'pack')
+        self.assertEqual(self.startup.call_count, 2)
+
+    def test_reopened_guard_after_rollover_requires_pin_for_review_and_stop(self):
+        initial = self.store.read()
+        self.store.publish(
+            [task['text'] for task in initial['tasks']], initial['game_minutes'],
+            expected_revision=initial['revision'], repeat_daily=True,
+        )
+        self.plan.refresh()
+        self._start()
+        self._submit()
+        yesterday = self._store().read()
+        old_guard = self.study.guard
+        self._approve(self.wrong_pin)
+        self.assertEqual(self._store().read(), yesterday)
+        attempts_before = old_guard.attempts_path.read_bytes()
+        self.plan.destroy()
+        self.study.close()
+        self.study.destroy()
+
+        self.day += timedelta(days=1)
+        self.clock.advance(24 * 60 * 60)
+        new_lease = self._resume().activate(120)
+        self.study = self._controller()
+        self.plan = self._plan_panel()
+        self.assertIsNot(self.study.guard, old_guard)
+        self.assertTrue(self.study.guard.configured())
+        self.assertEqual(self.study.guard.attempts_path.read_bytes(), attempts_before)
+        self.assertTrue(self.study.session.active)
+        self.assertEqual(self.study.active_study_id(), new_lease['session_id'])
+        today = self._store().read()
+        before = self.store.path.read_bytes()
+
+        with mock.patch('study_ui.simpledialog.askstring', return_value=self.wrong_pin) as prompt:
+            self.plan.history_button.invoke()
+        prompt.assert_called_once()
+        self.assertIsNone(self.plan._selected_date)
+        self.assertEqual(self.study.guard._read_attempts()[0], 2)
+        self.assertEqual(self.store.path.read_bytes(), before)
+        self.assertEqual(self._store().progress()['total_points'], 0)
+        self.assertEqual(self._resume().read(), new_lease)
+
+        with mock.patch('study_ui.simpledialog.askstring', return_value=self.pin):
+            self.plan.history_button.invoke()
+        self.assertEqual(self.plan.plan, yesterday)
+        self._approve(self.wrong_pin)
+        self.assertEqual(self.store.path.read_bytes(), before)
+        self.assertEqual(self._store().read(yesterday['date'])['status'], 'submitted')
+        self.assertEqual(self._store().progress()['total_points'], 0)
+        with mock.patch('study_ui.simpledialog.askstring', return_value=self.wrong_pin):
+            self.plan.study_stop.invoke()
+        self.assertEqual(self._resume().read(), new_lease)
+        self.assertTrue(self.study.session.active)
+        self.assertEqual(self.store.path.read_bytes(), before)
+
+        self._approve()
+        self.assertEqual(self._store().read(yesterday['date'])['status'], 'approved')
+        self.assertEqual(self._store().read(), today)
+        self.assertEqual(self._store().progress()['total_points'], 30)
+        self.assertEqual(self._resume().read(), new_lease)
+        self.assertTrue(self.study.session.active)
+        with mock.patch('study_ui.simpledialog.askstring', return_value=self.pin) as prompt:
+            self.plan.study_stop.invoke()
+        prompt.assert_called_once()
+        self.assertIsNone(self._resume().read())
+        self.assertFalse(self.study.session.active)
+        self.assertEqual(self._store().progress()['total_points'], 30)
 
 
 if __name__ == '__main__':
