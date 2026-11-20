@@ -1,6 +1,7 @@
 """Local checklist and parent review for today's family plan."""
 
 from functools import partial
+from datetime import date
 import os
 from pathlib import Path
 import tkinter as tk
@@ -17,6 +18,7 @@ from study_guard import StudyGuard
 
 
 STUDY_DURATIONS = {'1 час': 60, '2 часа': 120, 'Без таймера': 0}
+DATE_POLL_MS = 30_000
 ARMOR_NAMES = {
     'none': 'без брони', 'leather': 'кожаная броня', 'copper': 'медная броня',
     'iron': 'железная броня', 'gold': 'золотая броня', 'diamond': 'алмазная броня',
@@ -73,15 +75,17 @@ class TaskList(ttk.Frame):
 
 
 class PlanEditor(simpledialog.Dialog):
-    def __init__(self, parent, plan):
+    def __init__(self, parent, plan, *, repeat_daily=None):
         self.plan = plan
+        self._repeat_daily = bool(plan.get('repeat_daily', False)) if repeat_daily is None and plan else (
+            False if repeat_daily is None else bool(repeat_daily))
         super().__init__(parent, 'Дела на сегодня')
 
     def body(self, parent):
         current = self.plan['tasks'] if self.plan else []
         ttk.Label(
             parent,
-            text=f'Запишите до {MAX_TASKS} дел. Вес определяет долю дела в баллах за день.',
+            text=f'Запишите до {MAX_TASKS} дел. XP за день начисляется после проверки родителем.',
         ).grid(row=0, sticky='w', pady=(0, 8))
         self.task_list = TaskList(parent, width=645, height=260)
         self.task_list.grid(row=1, sticky='ew')
@@ -124,6 +128,12 @@ class PlanEditor(simpledialog.Dialog):
         self.minutes = ttk.Spinbox(game, from_=5, to=120, increment=5, width=6)
         self.minutes.set(str(self.plan['game_minutes'] if self.plan else 45))
         self.minutes.pack(side='left')
+        self.repeat_daily_var = tk.BooleanVar(self, value=self._repeat_daily)
+        self.repeat_daily_check = ttk.Checkbutton(
+            parent, text='Повторять эти дела каждый день',
+            variable=self.repeat_daily_var,
+        )
+        self.repeat_daily_check.grid(row=3, sticky='w', pady=(8, 0))
         return self.entries[0]
 
     def buttonbox(self):
@@ -170,7 +180,7 @@ class PlanEditor(simpledialog.Dialog):
         if not minutes.isascii() or not minutes.isdecimal() or len(minutes) > 3 or not 5 <= int(minutes) <= 120:
             messagebox.showwarning('Дела на сегодня', 'Укажите от 5 до 120 минут.', parent=self)
             return False
-        self.result = (tasks, int(minutes), task_minutes, task_points)
+        self.result = (tasks, int(minutes), task_minutes, task_points, bool(self.repeat_daily_var.get()))
         return True
 
 
@@ -184,10 +194,28 @@ class DailyPlanPanel(ttk.Frame):
         self.plan = None
         self.steve_progress = None
         self._checks = []
+        self._closed = False
+        self._selected_date = None
+        self._history_plans = []
+        self._history_choices = {}
+        self._history_open = False
+        self._seen_day = None
+        self._date_after = None
+        self.bind('<Destroy>', self._on_destroy, add='+')
 
-        ttk.Label(self, text='План на сегодня', font=('Segoe UI', 24, 'bold'), foreground='#193653').pack(anchor='w')
+        self.heading = ttk.Label(self, text='План на сегодня', font=('Segoe UI', 24, 'bold'), foreground='#193653')
+        self.heading.pack(anchor='w')
         self.status = ttk.Label(self, foreground='#385a72', font=('Segoe UI', 12))
         self.status.pack(anchor='w', pady=(6, 4))
+        history_row = ttk.Frame(self)
+        history_row.pack(fill='x', pady=(0, 5))
+        self.history_button = ttk.Button(history_row, text='Прошлые дни', command=self._open_history)
+        self.history_button.pack(side='left')
+        self.history_date = ttk.Combobox(history_row, width=31, state='readonly')
+        self.history_date.bind('<<ComboboxSelected>>', self._select_history, add='+')
+        self.today_button = ttk.Button(history_row, text='Сегодня', command=self._show_today)
+        self.pending_reviews_label = ttk.Label(history_row)
+        self.pending_reviews_label.pack(side='right', padx=(8, 0))
         self.progress = ttk.Progressbar(self, mode='determinate', length=200)
         self.progress.pack(anchor='w', pady=(0, 8))
         self._build_steve_scene()
@@ -217,12 +245,100 @@ class DailyPlanPanel(ttk.Frame):
         self.notice.pack(anchor='w', pady=(4, 0))
         self.bind('<Map>', lambda event: self.refresh() if event.widget is self else None)
         self.refresh()
+        self._date_after = self.after(DATE_POLL_MS, self._poll_date)
+
+    def _today_key(self):
+        supplier = getattr(self.store, 'today', date.today)
+        day = supplier() if callable(supplier) else supplier
+        key = day.isoformat()
+        if not isinstance(key, str) or len(key) != 10:
+            raise ValueError('Не удалось определить дату доски.')
+        return key
+
+    def _scope(self):
+        return {} if self._selected_date is None else {'plan_date': self._selected_date}
+
+    def _visible_matches(self, plan, selected_date):
+        if self._closed or self._selected_date != selected_date:
+            return False
+        if plan is None or self.plan is None:
+            return plan is self.plan
+        return self.plan['date'] == plan['date'] and self.plan['revision'] == plan['revision']
+
+    def _on_destroy(self, event):
+        if event.widget is not self or self._closed:
+            return
+        self._closed = True
+        if self._date_after is not None:
+            try:
+                self.after_cancel(self._date_after)
+            except tk.TclError:
+                pass
+            self._date_after = None
+        self._checks.clear()
+
+    def _poll_date(self):
+        self._date_after = None
+        if self._closed:
+            return
+        try:
+            changed = self._today_key() != self._seen_day
+        except (OSError, ValueError, TypeError, AttributeError):
+            changed = False
+        if changed:
+            self.refresh()
+        if not self._closed:
+            self._date_after = self.after(DATE_POLL_MS, self._poll_date)
+
+    def _open_history(self):
+        if self._closed or not self._history_plans or not self._check_pin():
+            return
+        if self._closed:
+            return
+        self._history_open = True
+        self.history_date.pack(side='left', padx=(8, 0))
+        self.today_button.pack(side='left', padx=(8, 0))
+        if self._selected_date is None:
+            self._selected_date = self._history_plans[0]['date']
+        self.refresh()
+
+    def _select_history(self, _event=None):
+        if self._closed:
+            return
+        selected = self._history_choices.get(self.history_date.get())
+        if selected is not None:
+            self._selected_date = selected
+            self.refresh()
+
+    def _show_today(self):
+        if self._closed:
+            return
+        self._selected_date = None
+        self._history_open = False
+        self.history_date.pack_forget()
+        self.today_button.pack_forget()
+        self.refresh()
+
+    def _render_history(self, unavailable):
+        labels = {'open': 'в работе', 'submitted': 'ждёт проверки', 'approved': 'подтверждён'}
+        self._history_choices = {
+            f"{plan['date']} · {labels[plan['status']]}": plan['date']
+            for plan in self._history_plans
+        }
+        self.history_date.configure(values=tuple(self._history_choices))
+        selected = next((label for label, day in self._history_choices.items()
+                         if day == self._selected_date), '')
+        self.history_date.set(selected)
+        self.heading.configure(text='План на сегодня' if self._selected_date is None else f'План от {self._selected_date}')
+        self.history_button.configure(state='normal' if self._history_plans and not unavailable else 'disabled')
+        pending = self.steve_progress.get('pending_reviews', []) if self.steve_progress else []
+        self.pending_reviews_label.configure(text=f'Ждут проверки: {len(pending)}' if pending else '')
 
     def _open_guide(self):
         open_daily_plan_guide(self, on_open_plan=self.focus_set)
 
     def _open_living_society(self):
-        if not self.plan or self.plan['status'] != 'approved':
+        if self._closed or self._selected_date is not None or not self.plan or self.plan['status'] != 'approved':
             return
         try:
             current = self.store.read()
@@ -283,33 +399,50 @@ class DailyPlanPanel(ttk.Frame):
         total = progress['total_points']
         self.scene.sync(self._scene_tasks(), total)
         cycle = progress['rebirth_count'] + 1
-        self.steve_score.configure(text=f'Путь Стива {cycle} · {total} / {REBIRTH_POINTS}')
-        self.steve_today.configure(text=f"Сегодня · {progress['today_points']} / {progress['daily_cap']} баллов")
+        self.steve_score.configure(text=f'Путь Стива {cycle} · подтверждено {total} / {REBIRTH_POINTS} XP')
+        checked = progress['today_points']
+        approved = progress['approved_today_points']
+        day_label = self._selected_date or 'Сегодня'
+        if self.plan and self.plan['status'] == 'approved':
+            today_text = f'{day_label} · подтверждено за день: {approved} / {progress["daily_cap"]} XP'
+        else:
+            today_text = f'{day_label} · сделано {checked} / {progress["daily_cap"]}; ждёт проверки: {progress["provisional_points"]}'
+        self.steve_today.configure(text=today_text)
         detail = equipment_text(progress['current_tier']).capitalize()
         tier = progress['next_tier']
         if tier:
             detail += f"\nНа {tier['threshold']} баллах — {equipment_text(tier)}."
         self.steve_equipment.configure(text=detail)
-        if progress['can_rebirth']:
+        if progress['can_rebirth'] and self._selected_date is None:
             self.rebirth_button.pack(anchor='w', pady=(5, 0))
         else:
             self.rebirth_button.pack_forget()
 
     def _rebirth(self):
         progress = self.steve_progress
-        if progress is None or not progress['can_rebirth']:
+        if self._closed or self._selected_date is not None or progress is None or not progress['can_rebirth']:
             return
         revision = self.plan['revision'] if self.plan else None
+        cycle = progress['rebirth_count']
+        total_points = progress['total_points']
+        day = self._today_key()
         if not messagebox.askokcancel(
             'Перерождение',
-            'Начать новый путь Стива? Баллы пути и экипировка сбросятся. '
+            'Начать новый путь Стива? Подтверждённый XP пути и экипировка сбросятся. '
             'Сегодняшний список с отметками сохранится, счётчик перерождений увеличится. '
-            'Баллы нового пути начнут начисляться со следующего дня.',
+            'Новый XP начисляется после подтверждения ещё не проверенных планов.',
             parent=self.winfo_toplevel(),
         ):
             return
+        if self._closed or self._selected_date is not None:
+            return
+        if self._today_key() != day:
+            self.refresh()
+            self.notice.configure(text='Наступил новый день. Проверьте доску ещё раз.')
+            return
         self._commit(
-            partial(self.store.rebirth, expected_revision=revision, expected_cycle=progress['rebirth_count']),
+            partial(self.store.rebirth, expected_revision=revision, expected_cycle=cycle,
+                    expected_total_points=total_points),
             'Стив начал новый путь.',
         )
 
@@ -340,7 +473,10 @@ class DailyPlanPanel(ttk.Frame):
 
     def _remove_study_trace(self, event):
         if event.widget is self:
-            self.study.status.trace_remove('write', self._study_trace)
+            try:
+                self.study.status.trace_remove('write', self._study_trace)
+            except tk.TclError:
+                pass
 
     def _start_study(self):
         started = self.study.start_lessons(duration_minutes=STUDY_DURATIONS[self.study_duration.get()])
@@ -351,11 +487,19 @@ class DailyPlanPanel(ttk.Frame):
         self.notice.configure(text='' if stopped else self.study.notice.get())
 
     def refresh(self):
+        if self._closed:
+            return False
         try:
-            self.plan, self.steve_progress = self.store.snapshot()
-        except (OSError, ValueError) as error:
+            day = self._today_key()
+            self.store.ensure_today()
+            self.plan, self.steve_progress = self.store.snapshot(**self._scope())
+            self._history_plans = self.store.past_days()
+            self._seen_day = day
+        except (OSError, RuntimeError, ValueError) as error:
             self.plan = None
             self.steve_progress = None
+            self._history_plans = []
+            self._seen_day = locals().get('day', self._seen_day)
             self._render(unavailable=True)
             self.notice.configure(text=f'Не удалось прочитать план. {error}')
             return False
@@ -363,6 +507,7 @@ class DailyPlanPanel(ttk.Frame):
         return True
 
     def _render(self, *, unavailable=False):
+        self._render_history(unavailable)
         for child in self.rows.winfo_children():
             child.destroy()
         self._checks.clear()
@@ -392,14 +537,14 @@ class DailyPlanPanel(ttk.Frame):
         self.feedback.configure(text=feedback)
         self.submit_button.configure(state='normal' if phase == 'open' and done == len(tasks) else 'disabled')
         self.edit_button.configure(text='Изменить дела' if plan else 'Добавить дела',
-                                   state='disabled' if unavailable or phase in ('submitted', 'approved') else 'normal')
+                                   state='disabled' if unavailable or self._selected_date is not None or phase in ('submitted', 'approved') else 'normal')
         self.approve_button.configure(state='normal' if phase == 'submitted' else 'disabled')
         self._update_game_access()
         for index, task in enumerate(tasks):
             self._render_task(index, task, plan['revision'], phase)
 
     def _update_game_access(self):
-        if self.plan and self.plan['status'] == 'approved':
+        if self._selected_date is None and self.plan and self.plan['status'] == 'approved':
             try:
                 active = self.study is not None and (self.study.session.active or self.study.active_study_id())
             except (OSError, ValueError):
@@ -446,6 +591,8 @@ class DailyPlanPanel(ttk.Frame):
         self.task_list.track(separator)
 
     def _commit(self, operation, success):
+        if self._closed:
+            return False
         try:
             saved = operation()
         except DailyPlanConflict as error:
@@ -461,25 +608,35 @@ class DailyPlanPanel(ttk.Frame):
         return False
 
     def _task(self, index, status, revision):
+        if self._closed or not self.plan:
+            return
         newly_done = (status == 'done' and self.plan and self.plan['revision'] == revision
                       and self.plan['tasks'][index]['status'] != 'done')
         notice = 'Запрос о помощи виден в списке.' if status == 'help' else ''
-        saved = self._commit(partial(self.store.set_task, index, status, expected_revision=revision), notice)
+        saved = self._commit(partial(self.store.set_task, index, status,
+                                     expected_revision=revision, **self._scope()), notice)
         if saved and newly_done:
             self.scene.celebrate(self._scene_tasks(), self.steve_progress['total_points'], index)
 
     def _submit(self):
+        if self._closed or not self.plan:
+            return
         revision = self.plan['revision']
+        scope = self._scope()
 
         def submit():
-            session_id = self.study.active_study_id() if self.study is not None else None
-            return self.store.submit(expected_revision=revision, study_session_id=session_id)
+            session_id = self.study.active_study_id() if self.study is not None and not scope else None
+            return self.store.submit(expected_revision=revision, study_session_id=session_id, **scope)
 
         self._commit(submit, 'Родитель может проверить список на этом компьютере.')
 
     def _check_pin(self, *, allow_setup=False):
+        if self._closed:
+            return False
         if self.study is not None:
             authorized = self.study.authorize_parent('Для родителей', allow_setup=allow_setup)
+            if self._closed:
+                return False
             self.notice.configure(text='' if authorized else self.study.notice.get())
             return authorized
         try:
@@ -487,7 +644,7 @@ class DailyPlanPanel(ttk.Frame):
                 self.notice.configure(text='Сначала настройте родительский PIN на вкладке «Уроки».')
                 return False
             pin = simpledialog.askstring('Для родителей', 'Введите родительский PIN.', show='•', parent=self.winfo_toplevel())
-            if pin is None:
+            if self._closed or pin is None:
                 return False
             if self.guard.verify(pin):
                 return True
@@ -497,32 +654,57 @@ class DailyPlanPanel(ttk.Frame):
         return False
 
     def _edit(self):
+        if self._closed or self._selected_date is not None:
+            return
         plan = self.plan
+        day = self._today_key()
         if not self._check_pin(allow_setup=plan is None):
             return
+        if not self._visible_matches(plan, None) or self._today_key() != day:
+            return
         parent = self.winfo_toplevel()
-        result = PlanEditor(parent, plan).result
-        if result is None:
+        editor_kwargs = {'repeat_daily': self.steve_progress['repeat_daily']} if plan and self.steve_progress else {}
+        result = PlanEditor(parent, plan, **editor_kwargs).result
+        if result is None or not self._visible_matches(plan, None) or self._today_key() != day:
             return
         if plan and not messagebox.askokcancel('Изменить дела', 'Сохранить новый список? Галочки в старом списке сбросятся.', parent=parent):
             return
-        tasks, minutes, task_minutes, task_points = result
+        if not self._visible_matches(plan, None) or self._today_key() != day:
+            return
+        if len(result) == 4:
+            tasks, minutes, task_minutes, task_points = result
+            repeat = {}
+        elif len(result) == 5 and type(result[4]) is bool:
+            tasks, minutes, task_minutes, task_points, repeat_daily = result
+            repeat = {'repeat_daily': repeat_daily}
+        else:
+            self.notice.configure(text='Не удалось прочитать настройки ежедневной доски.')
+            return
         revision = plan['revision'] if plan else None
         self._commit(
             partial(self.store.publish, tasks, minutes, expected_revision=revision,
-                    task_minutes=task_minutes, task_points=task_points),
+                    task_minutes=task_minutes, task_points=task_points, **repeat),
             'План сохранён.',
         )
 
     def _approve(self):
+        if self._closed or not self.plan:
+            return
         plan = self.plan
+        selected_date = self._selected_date
+        scope = self._scope()
         if not self._check_pin():
             return
+        if not self._visible_matches(plan, selected_date):
+            if not self._closed:
+                self.notice.configure(text='Доска изменилась. Проверьте выбранный день ещё раз.')
+            return
         saved = self._commit(
-            partial(self.store.review, approved=True, feedback='', expected_revision=plan['revision']),
+            partial(self.store.review, approved=True, feedback='', expected_revision=plan['revision'], **scope),
             'План подтверждён.',
         )
-        if not saved or self.study is None:
+        if (not saved or self.study is None or selected_date is not None or
+                plan['date'] != self._today_key()):
             return
         session_id = plan.get('study_session_id')
         try:
@@ -537,10 +719,17 @@ class DailyPlanPanel(ttk.Frame):
             self.notice.configure(text='План подтверждён. Режим «Уроки» завершён.')
 
     def _return_task(self, index, revision):
+        if self._closed or not self.plan:
+            return
+        plan, selected_date, scope = self.plan, self._selected_date, self._scope()
+        if plan['revision'] != revision:
+            return
         if not self._check_pin():
             return
+        if not self._visible_matches(plan, selected_date):
+            return
         comment = simpledialog.askstring('Что поправить?', 'Коротко напишите, что осталось сделать.', parent=self.winfo_toplevel())
-        if comment is None:
+        if comment is None or not self._visible_matches(plan, selected_date):
             return
         self._commit(partial(self.store.review, approved=False, feedback=comment, task_index=index,
-                             expected_revision=revision), 'Пункт возвращён с пояснением.')
+                             expected_revision=revision, **scope), 'Пункт возвращён с пояснением.')

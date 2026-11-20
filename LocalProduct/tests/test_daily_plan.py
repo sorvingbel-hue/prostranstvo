@@ -12,7 +12,9 @@ import tempfile
 import unittest
 from unittest import mock
 
-from daily_plan import DailyPlan, DailyPlanConflict, DailyPlanError, MAX_TASK_LENGTH, MAX_TASKS
+from daily_plan import (
+    DailyPlan, DailyPlanConflict, DailyPlanError, MAX_TASK_LENGTH, MAX_TASKS,
+)
 
 
 class DailyPlanTests(unittest.TestCase):
@@ -36,6 +38,11 @@ class DailyPlanTests(unittest.TestCase):
 
     def test_reads_do_not_create_data(self):
         self.assertIsNone(self.store.read())
+        self.assertIsNone(self.store.snapshot()[0])
+        self.assertEqual(self.store.history(), [])
+        self.assertEqual(self.store.past_days(), [])
+        self.assertEqual(self.store.progress()['pending_reviews'], [])
+        self.assertIsNone(self.store.ensure_today())
         self.assertFalse(self.root.exists())
 
     def test_checklist_round_trip_and_parent_confirmation(self):
@@ -124,15 +131,30 @@ class DailyPlanTests(unittest.TestCase):
             stored, progress = self.store.snapshot()
             self.assertEqual(stored, plan)
             self.assertEqual(progress['today_points'], expected)
-            self.assertEqual(progress['total_points'], expected)
+            self.assertEqual(progress['provisional_points'], expected)
+            self.assertEqual(progress['approved_today_points'], 0)
+            self.assertEqual(progress['total_points'], 0)
+            self.assertEqual(progress['current_tier']['threshold'], 0)
         plan = self.store.submit(expected_revision=plan['revision'])
         returned = self.store.review(approved=False, feedback='Повтори пункт.', task_index=2,
                                      expected_revision=plan['revision'])
-        self.assertEqual(self.store.progress()['total_points'], 16)
-        self.store.publish(['Новый список'], 45, expected_revision=returned['revision'], task_points=[15])
+        self.assertEqual(self.store.progress()['provisional_points'], 16)
         self.assertEqual(self.store.progress()['total_points'], 0)
+        plan = self.store.publish(['Новый список'], 45, expected_revision=returned['revision'], task_points=[15])
+        self.assertEqual(self.store.progress()['total_points'], 0)
+        plan = self.store.set_task(0, 'done', expected_revision=plan['revision'])
+        plan = self.store.submit(expected_revision=plan['revision'])
+        self.assertEqual(self.store.progress()['provisional_points'], 30)
+        self.assertEqual(self.store.progress()['total_points'], 0)
+        self.store.review(approved=True, feedback='', expected_revision=plan['revision'])
+        progress = self.store.progress()
+        self.assertEqual(progress['today_points'], 30)
+        self.assertEqual(progress['provisional_points'], 0)
+        self.assertEqual(progress['approved_today_points'], 30)
+        self.assertEqual(progress['total_points'], 30)
+        self.assertEqual(progress['current_tier']['threshold'], 10)
 
-    def test_old_file_is_read_without_rewrite_and_settled_once_on_rollover(self):
+    def test_old_unapproved_file_is_read_without_rewrite_and_archived_without_credit(self):
         self.root.mkdir()
         legacy = {
             'date': self.day.isoformat(), 'revision': 1, 'status': 'open',
@@ -145,20 +167,26 @@ class DailyPlanTests(unittest.TestCase):
         self.store.path.write_bytes(serialized)
         self.assertEqual(self.store.read(), legacy)
         self.assertEqual(self.store.progress()['today_points'], 15)
+        self.assertEqual(self.store.progress()['provisional_points'], 15)
+        self.assertEqual(self.store.progress()['total_points'], 0)
         self.assertEqual(self.store.path.read_bytes(), serialized)
         self.day += timedelta(days=1)
         self.assertIsNone(self.store.read())
-        self.assertEqual(self.store.progress()['total_points'], 15)
+        self.assertEqual(self.store.progress()['total_points'], 0)
         plan = self.store.publish(['Новое задание'], 45, expected_revision=None, task_points=[20])
-        self.assertEqual(self.store.progress()['total_points'], 15)
+        self.assertEqual(self.store.history(), [legacy])
+        self.assertEqual(self.store.progress()['total_points'], 0)
         completed = self.store.set_task(0, 'done', expected_revision=plan['revision'])
-        self.assertEqual(self.store.progress()['total_points'], 45)
-        self.store.set_task(0, 'done', expected_revision=completed['revision'])
-        self.assertEqual(self.store.progress()['total_points'], 45)
+        self.assertEqual(self.store.progress()['total_points'], 0)
+        completed = self.store.set_task(0, 'done', expected_revision=completed['revision'])
+        self.assertEqual(self.store.progress()['provisional_points'], 30)
+        submitted = self.store.submit(expected_revision=completed['revision'])
+        self.store.review(approved=True, feedback='', expected_revision=submitted['revision'])
+        self.assertEqual(self.store.progress()['total_points'], 30)
         self.day -= timedelta(days=1)
         with self.assertRaises(DailyPlanConflict):
             self.publish()
-        self.assertEqual(self.store.progress()['total_points'], 45)
+        self.assertEqual(self.store.progress()['total_points'], 30)
 
     def test_invalid_weights_cannot_replace_plan(self):
         original = self.publish()
@@ -202,15 +230,15 @@ class DailyPlanTests(unittest.TestCase):
         snapshot = self.store.snapshot()
         with mock.patch('daily_plan.os.replace', side_effect=PermissionError('synthetic failure')):
             with self.assertRaises(PermissionError):
-                self.store.rebirth(expected_revision=None, expected_cycle=0)
+                self.store.rebirth(expected_revision=None, expected_cycle=0, expected_total_points=600)
         self.assertEqual(self.store.snapshot(), snapshot)
-        self.assertIsNone(self.store.rebirth(expected_revision=None, expected_cycle=0))
+        self.assertIsNone(self.store.rebirth(expected_revision=None, expected_cycle=0, expected_total_points=600))
         self.assertEqual(self.store.progress()['rebirth_count'], 1)
         self.assertEqual(self.store.progress()['total_points'], 0)
         with self.assertRaises(DailyPlanConflict):
-            self.store.rebirth(expected_revision=None, expected_cycle=0)
+            self.store.rebirth(expected_revision=None, expected_cycle=0, expected_total_points=0)
         with self.assertRaises(DailyPlanError):
-            self.store.rebirth(expected_revision=None, expected_cycle=1)
+            self.store.rebirth(expected_revision=None, expected_cycle=1, expected_total_points=0)
 
         plan = self.publish()
         self.store.set_task(0, 'done', expected_revision=plan['revision'])
@@ -218,8 +246,13 @@ class DailyPlanTests(unittest.TestCase):
         self.assertEqual(self.store.progress()['total_points'], 0)
         self.day += timedelta(days=1)
         plan = self.publish()
-        self.store.set_task(0, 'done', expected_revision=plan['revision'])
-        self.assertEqual(self.store.progress()['total_points'], 15)
+        plan = self.store.set_task(0, 'done', expected_revision=plan['revision'])
+        self.assertEqual(self.store.progress()['provisional_points'], 15)
+        self.assertEqual(self.store.progress()['total_points'], 0)
+        plan = self.store.set_task(1, 'done', expected_revision=plan['revision'])
+        plan = self.store.submit(expected_revision=plan['revision'])
+        self.store.review(approved=True, feedback='', expected_revision=plan['revision'])
+        self.assertEqual(self.store.progress()['total_points'], 30)
 
     def test_invalid_text_and_corrupt_snapshot_are_rejected(self):
         with self.assertRaises(DailyPlanError):

@@ -204,7 +204,7 @@ def main():
     shutil.copy2(PRODUCT / 'docs' / 'AGENT-CONTROL-RU.txt', stage / 'AGENT-CONTROL-RU.txt')
     shutil.copy2(PRODUCT / 'docs' / 'WINDOWS-HEALTH-RU.txt', stage / 'WINDOWS-HEALTH-RU.txt')
     shutil.copy2(PRODUCT / 'docs' / 'STORAGE-AUDIT-RU.txt', stage / 'STORAGE-AUDIT-RU.txt')
-    for name in ('SECURITY-REPORT-RU.txt', 'SECURITY-CHANNEL-RU.txt', 'STORAGE-TASKS-RU.txt', 'CACHE-CLEANUP-RU.txt', 'APPLICATION-REMOVAL-RU.txt', 'OFFLINE-FAMILY-SCENARIOS-RU.md', 'PRODUCT-ROADMAP-RU.md', 'RELEASE-PYTHON-RUNTIME-RU.txt'):
+    for name in ('SECURITY-REPORT-RU.txt', 'SECURITY-CHANNEL-RU.txt', 'STORAGE-TASKS-RU.txt', 'CACHE-CLEANUP-RU.txt', 'APPLICATION-REMOVAL-RU.txt', 'OFFLINE-FAMILY-SCENARIOS-RU.md', 'PRODUCT-ROADMAP-RU.md', 'RELEASE-PYTHON-RUNTIME-RU.txt', 'DAILY-BOARD-RU.md', 'AGENT-COLLABORATION-RU.md', 'REMOTE-APPLICATION-INSTALL-RU.md'):
         shutil.copy2(PRODUCT / 'docs' / name, stage / name)
     licenses = stage / 'licenses'
     licenses.mkdir()
