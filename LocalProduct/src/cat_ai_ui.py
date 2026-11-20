@@ -9,7 +9,9 @@ import queue
 import re
 import threading
 import tkinter as tk
-from tkinter import ttk
+from tkinter import simpledialog, ttk
+
+from study_guard import StudyGuard
 
 
 BACKGROUND = '#fffaf0'
@@ -34,10 +36,38 @@ ATTESTATION_NOTICE = (
     '(provider_privacy_verified=false).'
 )
 ACCOUNT_NOTICE = (
-    'Это настройки текущего пользователя Windows. Общая учётная запись '
-    'не разделяет доступ членов семьи; это окно не является защищённой '
-    'родительской панелью.'
+    'Для открытия и сохранения настроек нужен PIN родителя. Он ограничивает '
+    'действия в интерфейсе. При общей учётной записи Windows доступ к файлам '
+    'и запуск собственного кода остаются общими.'
 )
+
+
+def require_parent_pin(master, guard=None):
+    """Authorize only a visible UI action; never pass the PIN to a worker."""
+    guard = guard if guard is not None else StudyGuard()
+    try:
+        configured = guard.configured()
+    except Exception:
+        raise PermissionError('Не удалось проверить родительский PIN. Попробуйте позже.') from None
+    if configured is not True:
+        raise PermissionError('Сначала настройте родительский PIN на вкладке «Уроки».')
+    pin = None
+    try:
+        pin = simpledialog.askstring(
+            'Подтверждение родителя', 'Введите PIN родителя.',
+            show='•', parent=master.winfo_toplevel(),
+        )
+        if pin is None:
+            notice = 'Подтверждение родителя отменено.'
+        elif guard.verify(pin) is True:
+            return
+        else:
+            notice = 'PIN родителя не подошёл.'
+    except Exception:
+        notice = 'Не удалось проверить родительский PIN. Попробуйте позже.'
+    finally:
+        pin = None
+    raise PermissionError(notice)
 
 
 def collect_values(enabled, model, daily_limit, output_limit, consent, zdr, reference):
@@ -135,8 +165,10 @@ def save_settings_worker(settings, gateway, values, key_action, key_value, repli
 
 
 class AiSettingsWindow(tk.Toplevel):
-    def __init__(self, master, settings, gateway):
+    def __init__(self, master, settings, gateway, *, parent_guard=None):
+        require_parent_pin(master, parent_guard)
         super().__init__(master)
+        self._parent_guard = parent_guard
         self.settings, self.gateway = settings, gateway
         self.title('Мурчик · настройки внешнего ИИ')
         self.geometry('690x760')
@@ -354,6 +386,12 @@ class AiSettingsWindow(tk.Toplevel):
         if self._busy or self._closed or not self._status_loaded:
             return
         try:
+            require_parent_pin(self, self._parent_guard)
+        except PermissionError as error:
+            self._clear_key_entry()
+            self.status_label.configure(text=str(error))
+            return
+        try:
             values = collect_values(self.enabled_var.get(), self.model_var.get(),
                                     self.daily_var.get(), self.output_var.get(),
                                     self.consent_var.get(), self.zdr_var.get(), self.reference_var.get())
@@ -420,6 +458,6 @@ class AiSettingsWindow(tk.Toplevel):
         self.destroy()
 
 
-def open_ai_settings(master, settings, gateway):
+def open_ai_settings(master, settings, gateway, *, parent_guard=None):
     """Open explicitly; the caller may keep a reference for single-window use."""
-    return AiSettingsWindow(master, settings, gateway)
+    return AiSettingsWindow(master, settings, gateway, parent_guard=parent_guard)

@@ -56,6 +56,16 @@ repair, сохраняет его конечную квитанцию, зате�
 Живой запуск наблюдения не доказывает, что будущие cleanup и health уже прошли.
 После перезагрузки Windows автоматического возобновления этого исполнителя нет.
 
+Границы personal MCP после security review:
+Личная служба сохраняет пять фиксированных операций. Новый system_maintenance
+MCP разрешает только diagnostics, health и scan; repair/cleanup отклоняются
+до обращения к службе. scan может запустить штатное устранение угроз Defender.
+Это ограничение одного AI-маршрута, а не новая ACL/граница самой службы.
+Процесс того же Windows-владельца по-прежнему может использовать её другой
+разрешённый маршрут. Независимое подтверждение внутри службы — отдельная
+задача. Уже работающий MCP должен переподключиться, чтобы загрузить новый код.
+В portable нет personal SYSTEM-службы или её system_maintenance инструмента.
+
 Справка Microsoft:
 https://support.microsoft.com/en-us/windows/experience/backup-recovery/using-system-file-checker-in-windows
 https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/clean-up-the-winsxs-folder?view=windows-11

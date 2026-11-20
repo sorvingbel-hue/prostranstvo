@@ -414,6 +414,9 @@ class StudyPlanPopup:
         if session_id == self.last_session:
             return
         try:
+            # Materialize an explicitly enabled daily template before deciding
+            # that a new study session has no checklist for this date.
+            self.store.ensure_today()
             if self.store.read() is None:
                 self.last_session = session_id
                 return

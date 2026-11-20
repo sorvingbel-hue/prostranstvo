@@ -1,3 +1,37 @@
+# Independent QA - current source snapshot 0.1.20
+
+## Additional v2 family-controller verification — 20 November 2026 UTC
+
+- Eight `test_family_workflow.py` scenarios passed on Windows/CPython 3.13.18, with zero skips, failures or errors. Two new scenarios compose the daily repeat/history, real temporary PIN/store and persistent Study-controller paths.
+- Verified next-day reset and archived submission; late approval credits 30 XP exactly once without stopping today's lease; today's own approval adds another 30 XP and ends only its bound lease. Recreated controllers preserve failed PIN attempts; wrong PIN cannot review, change confirmed XP or stop Study.
+- These are withdrawn Tk callbacks and temporary data, with a fake empty desktop and mocked startup/dialog/indicator adapters. Real window operations, registry registration, network and external launch paths are forbidden by the fixture. The child ran on an owned non-input QA desktop; input desktop stayed Default with no switching or input injection.
+- Eight tracked domestic state-file existence/hash observations were unchanged before/after. This is bounded evidence for those files, not a claim of complete machine isolation.
+- Product runtime and private package remain 0.1.20; this delta changes only tests and this QA note. The earlier full-suite totals below are historical for the preceding source snapshot and were not rerun for this test-only delta. Observed family interaction, reboot/sign-in and clean-machine acceptance remain open.
+
+Current source-QA baseline: candidate 0.1.20, 19 November 2026 (Pacific time). This source-only update adds the daily-board changes to the accepted QA tree. It includes no installers, private profiles or personal daily-plan data, and does not establish completion of the whole product concept.
+
+- Windows LocalProduct source suite: 1228 run, 1222 successful, 6 skipped, 141.620 seconds. The child verified its own non-input Windows QA desktop before GUI imports; the input desktop remained Default, without desktop switching or injected input. This was a real Windows desktop, not a VM or OS/account/service isolation, and is not household end-to-end acceptance.
+- A parent can opt into a repeating daily template. Explicitly opening the board, or starting an already-requested Study session, materializes today's list once; skipped days are not invented. Reading status/history has no write effect. Creating a list does not itself start Study.
+- Checkboxes show provisional progress. Only parent approval credits confirmed Steve progress. Revision/date checks prevent duplicate awards; late review and rework refer to the selected day. Reviewing an old day cannot stop today's Study, and a newer Study lease remains protected from an old approval.
+- Rebirth resets the confirmed path and preserves history. An old approval cannot restore points already spent on rebirth; a previously unapproved old day can add its award once to the current confirmed path. These are local progress records and animation, not delivery of Minecraft items or money.
+- History is bounded to 366 past lists and a 4 MiB record. At the bound, new-day creation fails visibly without deleting history or resetting points. Version-1 data is read without an immediate rewrite and becomes version 2 on an explicit saved operation. Close old version-1 code before that write; rollback needs a compatible data backup and must not overwrite newer history automatically.
+- Application-removal and scoped shader-cache cleanup from 0.1.19 retain their separate confirmation, fresh checks and receipts. Opening native uninstall UI is not proof of removal. Private policy holds and personal inventory are excluded; no universal SYSTEM shell/delete capability or new real-uninstall acceptance is claimed. Parent PIN is a UI boundary within a shared Windows account, not isolation from that account's code.
+- Game minutes remain an informational agreement. Native game-time enforcement, automatic Telegram/phone approval and scheduled Study activation are not included. Offline-family scenarios and remote official installation from a phone remain documented future work. Existing until-parent-cancel Study support is not a new 0.1.20 feature.
+- Build baseline remains final CPython 3.13.x patch 18 or later with Tk; recorded PyInstaller 6.22.3. Runtime provenance and remaining license-mapping limits are documented separately. Tests do not establish absence of vulnerabilities or full redistribution rights.
+- Candidate binaries remain private. Package checks and personal deployment acceptance are separate receipts and are not inferred from the source suite. Clean-machine install/update/uninstall, real application removal, sign-in/reboot, separate child-account and family acceptance, and remaining security/license gates stay open. LearningModule and unrelated base-tree files are preserved.
+
+Read the [daily-board contract](LocalProduct/docs/DAILY-BOARD-RU.md), [application-removal scope](LocalProduct/docs/APPLICATION-REMOVAL-RU.txt), [cache-cleanup scope](LocalProduct/docs/CACHE-CLEANUP-RU.txt), [offline scenario concept](LocalProduct/docs/OFFLINE-FAMILY-SCENARIOS-RU.md), [future phone/official-install concept](LocalProduct/docs/REMOTE-APPLICATION-INSTALL-RU.md), [release gates](LocalProduct/docs/PRODUCT-ROADMAP-RU.md), and [runtime provenance/license limits](LocalProduct/docs/RELEASE-PYTHON-RUNTIME-RU.txt).
+
+Review date/revision identity, atomic materialization, concurrent/repeated approval, confirmed versus provisional balances, late review after rebirth, review of old days while a newer Study session exists, history bounds and version-1 migration/rollback. Past-day/status reads must stay pure. Use synthetic daily-plan data and withdrawn Tk; test counts are not proof of live family use.
+
+For the existing application manager, use controlled providers and mocked openers; never run a real uninstaller to validate source QA. Do not alter private policy holds, connect real accounts, activate Study, change services/startup, or map windows onto the input desktop during unattended checks. Source publication does not restart installed GUI/MCP processes or prove that the new code is loaded there. Earlier independent findings outside this delta remain open; record the exact Git commit reviewed.
+
+---
+
+## Retained historical notes and dated QA
+
+The material below belongs to earlier snapshots through 18 November. Earlier beta 0.1.12 and pending-build statements are historical, superseded by the 0.1.20 source-QA summary above. Historical results are not added to the current test totals. Historical commands using generic Python 3.13 must now satisfy the final 3.13.18+ build floor.
+
 # Independent QA / review guide
 
 This is a source snapshot of Prostranstvo, a local Windows family application. Review this exact Git commit and report its SHA. Runtime profiles, credentials, messages, browser history, screenshots, databases and installed binaries are excluded.

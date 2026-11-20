@@ -220,6 +220,35 @@ CREATE VIRTUAL TABLE files_fts USING fts5(name,path,extension,category,source_ro
         self.assertFalse((self.dst / source.name).exists())
         self.assertEqual(self.indexed_path(), str(source))
 
+    def test_verified_rollback_is_not_reported_for_manual_review_on_recover(self):
+        # Regression supplied by Claude in 2e1530733fe01d7310a024801491d92c4acf86ac.
+        source = self.file()
+        self.indexed(source)
+        job = self.executor.plan_transfer([str(source)], str(self.dst))
+        self.executor.approve(job)
+        original = self.executor.index_connection
+        class FailedCommit:
+            def __init__(self, connection):
+                self.connection = connection
+            def __getattr__(self, name):
+                return getattr(self.connection, name)
+            def commit(self):
+                raise sqlite3.OperationalError('Synthetic commit failure')
+        def connection(write=False):
+            db = original(write)
+            return FailedCommit(db) if write else db
+        with mock.patch.object(self.executor, 'index_connection', side_effect=connection):
+            with self.assertRaises(sqlite3.OperationalError):
+                self.executor.execute(job)
+        with self.executor.connect() as db:
+            self.assertEqual(db.execute('SELECT state FROM receipts WHERE job=? AND n=0', (job,)).fetchone()[0], 'rolled_back')
+        for _ in range(2):
+            self.assertEqual(self.executor.recover(), {'verified_moves': 0, 'blocked': []})
+        self.assertNotIn('ручной', self.executor.get(job)['error'])
+        self.assertEqual(source.read_bytes(), b'valuable fixture document')
+        self.assertFalse((self.dst / source.name).exists())
+        self.assertEqual(self.indexed_path(), str(source))
+
     @unittest.skipUnless(os.name == 'nt', 'Windows sharing semantics required')
     def test_open_writer_prevents_move(self):
         source = self.file()

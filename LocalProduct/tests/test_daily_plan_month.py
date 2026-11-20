@@ -61,7 +61,7 @@ class SteveMonthTests(unittest.TestCase):
         )
         self.assert_score(today=0, total=0, tier=0, next_tier=10)
         with self.assertRaises(DailyPlanError):
-            self.store.rebirth(expected_revision=None, expected_cycle=0)
+            self.store.rebirth(expected_revision=None, expected_cycle=0, expected_total_points=0)
         seen = {0}
         for day_index in range(1, 21):
             count = (10, 1, 4, 7)[(day_index - 1) % 4]
@@ -84,19 +84,22 @@ class SteveMonthTests(unittest.TestCase):
                 self.school_day()
 
         self.assertEqual(seen, {tier[0] for tier in milestones})
-        reborn = self.store.rebirth(expected_revision=approved['revision'], expected_cycle=0)
+        reborn = self.store.rebirth(expected_revision=approved['revision'], expected_cycle=0, expected_total_points=600)
         self.reopen()
         self.assertEqual(self.store.read()['tasks'], approved['tasks'])
         self.assertEqual(reborn['status'], 'approved')
         self.assert_score(today=30, total=0, tier=0, next_tier=10)
         self.assertEqual(self.store.progress()['rebirth_count'], 1)
         with self.assertRaises(DailyPlanConflict):
-            self.store.rebirth(expected_revision=reborn['revision'], expected_cycle=0)
+            self.store.rebirth(expected_revision=reborn['revision'], expected_cycle=0, expected_total_points=0)
 
         self.school_day()
         self.assertIsNone(self.store.read())
         self.assert_score(today=0, total=0, tier=0, next_tier=10)
-        self.finish(self.publish(1))
+        plan = self.finish(self.publish(1))
+        self.assert_score(today=30, total=0, tier=0, next_tier=10)
+        submitted = self.store.submit(expected_revision=plan['revision'])
+        self.store.review(approved=True, feedback='', expected_revision=submitted['revision'])
         self.assert_score(today=30, total=30, tier=10, next_tier=75)
 
     def test_mixed_month_missing_days_return_and_resume(self):
@@ -119,7 +122,7 @@ class SteveMonthTests(unittest.TestCase):
                 plan = self.mark(plan, 2)
                 if day_index % 5 == 0:
                     # The plan can be left partially complete overnight.
-                    total += 13
+                    self.assertEqual(self.store.progress()['provisional_points'], 13)
                 elif day_index % 5 == 1:
                     plan = self.finish(plan)
                     submitted = self.store.submit(expected_revision=plan['revision'])
@@ -127,20 +130,26 @@ class SteveMonthTests(unittest.TestCase):
                                              expected_revision=submitted['revision'])
                     self.assertEqual(self.store.progress()['today_points'], 16)
                     self.assertEqual(plan['feedback'], 'Проверь ещё раз.')
-                    total += 16
+                    self.assertEqual(self.store.progress()['provisional_points'], 16)
                 else:
                     plan = self.finish(plan)
+                    self.assertEqual(self.store.progress()['total_points'], total)
+                    submitted = self.store.submit(expected_revision=plan['revision'])
+                    plan = self.store.review(approved=True, feedback='', expected_revision=submitted['revision'])
                     total += 30
                 self.reopen()
                 self.assertEqual(self.store.read(), plan)
                 self.assertEqual(self.store.progress()['total_points'], total)
             self.school_day()
 
-        self.assertEqual(total, 356)
-        self.assert_score(today=0, total=356, tier=240, next_tier=360)
+        self.assertEqual(total, 240)
+        self.assert_score(today=0, total=240, tier=240, next_tier=360)
         self.assertFalse(self.store.progress()['can_rebirth'])
-        self.finish(self.publish(10, [15] * 10))
-        self.assert_score(today=30, total=386, tier=360, next_tier=480)
+        plan = self.finish(self.publish(10, [15] * 10))
+        self.assert_score(today=30, total=240, tier=240, next_tier=360)
+        submitted = self.store.submit(expected_revision=plan['revision'])
+        self.store.review(approved=True, feedback='', expected_revision=submitted['revision'])
+        self.assert_score(today=30, total=270, tier=240, next_tier=360)
 
     def test_replaced_plan_and_old_window_do_not_add_to_month(self):
         for day_index in range(20):
@@ -150,15 +159,17 @@ class SteveMonthTests(unittest.TestCase):
                 ['Другой список на сегодня', 'Резервное дело'], 60,
                 expected_revision=old_revision, task_points=[20, 10],
             )
-            self.assertEqual(self.store.progress()['total_points'], day_index * 20)
+            self.assertEqual(self.store.progress()['total_points'], 0)
             with self.assertRaises(DailyPlanConflict):
                 self.mark({'revision': old_revision}, 0)
             plan = self.mark(plan, 0)
             self.assertEqual(self.store.progress()['today_points'], 20)
-            self.assertEqual(self.store.progress()['total_points'], (day_index + 1) * 20)
+            self.assertEqual(self.store.progress()['provisional_points'], 20)
+            self.assertEqual(self.store.progress()['total_points'], 0)
             self.school_day()
         self.reopen()
-        self.assert_score(today=0, total=400, tier=360, next_tier=480)
+        self.assert_score(today=0, total=0, tier=0, next_tier=10)
+        self.assertEqual(len(self.store.history()), 19)
 
 
 if __name__ == '__main__':
