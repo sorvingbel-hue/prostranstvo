@@ -17,6 +17,11 @@ from archive_ui import ArchivePanel
 from power_ui import PowerPanel
 from browser_login_ui import BrowserLoginPanel
 from maintenance_ui import MaintenancePanel
+from security_ui import SecurityPanel
+from storage_ui import StoragePanel
+from cache_cleanup_ui import CacheCleanupPanel
+from application_removal_ui import ApplicationRemovalPanel
+from desktop_control_ui import DesktopControlPanel
 LABELS={'queued':'В очереди','needs_approval':'Нужна проверка плана','running':'Выполняется','completed':'Готово','failed':'Ошибка','cancelled':'Отменено','interrupted':'Прервано'}
 class App(tk.Tk):
  def __init__(self):
@@ -82,6 +87,7 @@ class App(tk.Tk):
    'Общий каталог необязателен: чужие индексы и личные данные в пакет не включаются. '
    'Без каталога доступны обследование папок, поиск дублей и проверяемые планы переноса.')
   self._build_browser_login_panel()
+  self._build_desktop_control_panel()
   ttk.Label(self.settingstab,text=connectionText,wraplength=900,justify='left').pack(anchor='w')
   ttk.Button(self.settingstab,text='Открыть папку программы',command=lambda:os.startfile(str(APP_ROOT))).pack(anchor='w',pady=16)
   ttk.Button(self.settingstab,text='Открыть локальные данные',command=lambda:os.startfile(str(DATA_ROOT))).pack(anchor='w')
@@ -102,13 +108,33 @@ class App(tk.Tk):
   self.maintenancepanel=MaintenancePanel(self.maintenancetab)
   self.maintenancepanel.pack(fill='both',expand=True)
   self.maintenancepanel.start_polling()
+  self.securitypanel=SecurityPanel(self.homepages)
+  self.homepages.add(self.securitypanel,text='Безопасность')
+  self.securitypanel.start_polling()
+  self.storagepanel=StoragePanel(self.homepages)
+  self.homepages.add(self.storagepanel,text='Место на дисках')
+  self.storagepanel.start_polling()
+  self.cleanuppanel=CacheCleanupPanel(self.homepages,parent_guard=self.studypanel.guard)
+  self.homepages.add(self.cleanuppanel,text='Очистка кэшей')
+  self.removalpanel=ApplicationRemovalPanel(self.homepages,parent_guard=self.studypanel.guard)
+  self.homepages.add(self.removalpanel,text='Удаление программ')
  def _build_power_panel(self):
   self.powerpanel=PowerPanel(self.powertab,authorize_parent=self.studypanel.authorize_parent)
   self.powerpanel.pack(fill='both',expand=True)
  def _build_browser_login_panel(self):
   self.browserloginpanel=BrowserLoginPanel(self.settingstab,authorize_parent=self.studypanel.authorize_parent)
   self.browserloginpanel.pack(fill='x',pady=(0,12))
+ def _build_desktop_control_panel(self):
+  self.desktopcontroltab=ttk.Frame(self.tabs)
+  self.tabs.add(self.desktopcontroltab,text='Доступ ИИ')
+  self.desktopcontrolpanel=DesktopControlPanel(self.desktopcontroltab,authorize_parent=self.studypanel.authorize_parent)
+  self.desktopcontrolpanel.pack(fill='both',expand=True)
  def destroy(self):
+  desktoppanel=self.__dict__.get('desktopcontrolpanel')
+  if desktoppanel is not None:desktoppanel.close()
+  for panelname in ('securitypanel','storagepanel','removalpanel'):
+   panel=self.__dict__.get(panelname)
+   if panel is not None:panel.close()
   maintenancepanel=self.__dict__.get('maintenancepanel')
   if maintenancepanel is not None:maintenancepanel.close()
   panel=self.__dict__.get('powerpanel')

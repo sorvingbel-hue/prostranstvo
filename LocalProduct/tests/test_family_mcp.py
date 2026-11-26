@@ -45,6 +45,23 @@ class FakeBridge:
         return dict(self.receipt)
 
 
+class ObservedInput(io.StringIO):
+    def __init__(self, text='', failure=None, fail_after_reads=0):
+        super().__init__(text)
+        self.read_sizes = []
+        self.failure = failure
+        self.fail_after_reads = fail_after_reads
+
+    def __iter__(self):
+        raise AssertionError('unbounded stream iteration is not allowed')
+
+    def readline(self, size=-1):
+        self.read_sizes.append(size)
+        if self.failure is not None and len(self.read_sizes) > self.fail_after_reads:
+            raise self.failure
+        return super().readline(size)
+
+
 class FamilyMcpTests(unittest.TestCase):
     def setUp(self):
         # Never import the real family backend; these protocol tests need no DB,
@@ -83,6 +100,66 @@ class FamilyMcpTests(unittest.TestCase):
 
     def test_import_constructs_no_bridge_and_does_not_read_streams(self):
         self.default_bridge.assert_not_called()
+        self.assertEqual(self.bridge.calls, [])
+
+    def test_valid_input_and_eof_use_bounded_reads(self):
+        requests = [{'jsonrpc': '2.0', 'id': ident, 'method': 'ping'} for ident in (1, 'проверка👋')]
+        stream = ObservedInput(''.join(json.dumps(request, ensure_ascii=False) + '\n' for request in requests))
+        output = io.StringIO()
+        self.protocol.main(stream, output, self.bridge)
+        self.assertEqual(stream.read_sizes, [self.protocol.MAX_REQUEST_CHARS + 1] * 3)
+        self.assertEqual([json.loads(line) for line in output.getvalue().splitlines()],
+                         [{'jsonrpc': '2.0', 'id': request['id'], 'result': {}} for request in requests])
+        self.assertEqual(self.bridge.calls, [])
+
+    def test_request_at_character_limit_is_accepted_with_or_without_newline(self):
+        request = json.dumps({'jsonrpc': '2.0', 'id': 'boundary', 'method': 'ping'})
+        for ending in ('\n', ''):
+            with self.subTest(ending=repr(ending)):
+                line = request + ' ' * (self.protocol.MAX_REQUEST_CHARS - len(request) - len(ending)) + ending
+                responses, _ = self.exchange(raw=line)
+                self.assertEqual(responses, [{'jsonrpc': '2.0', 'id': 'boundary', 'result': {}}])
+        self.assertEqual(self.bridge.calls, [])
+
+    def test_oversize_stops_before_parsing_or_reading_a_valid_send_suffix(self):
+        suffix = json.dumps(self.request('send_family_message', {'text': 'fixture', 'request_id': 'must_not_send'})) + '\n'
+        stream = ObservedInput('x' * (self.protocol.MAX_REQUEST_CHARS + 1) + suffix)
+        output = io.StringIO()
+        with mock.patch.object(self.protocol.json, 'loads', side_effect=AssertionError('oversize must not be parsed')) as decoder:
+            self.protocol.main(stream, output, self.bridge)
+            decoder.assert_not_called()
+        self.assertEqual(stream.read_sizes, [self.protocol.MAX_REQUEST_CHARS + 1])
+        self.assertEqual(stream.tell(), self.protocol.MAX_REQUEST_CHARS + 1)
+        self.assertEqual(json.loads(output.getvalue()),
+                         {'jsonrpc': '2.0', 'id': None, 'error': {'code': -32600, 'message': 'Invalid request'}})
+        self.assertEqual(self.bridge.calls, [])
+
+    def test_read_errors_return_one_generic_error_and_stop(self):
+        secret = 'SYNTHETIC_PRIVATE_READ_FAILURE'
+        failures = [UnicodeDecodeError('utf-8', b'\xff', 0, 1, secret), OSError(secret), ValueError(secret)]
+        for failure in failures:
+            for valid_first in (False, True):
+                with self.subTest(failure=type(failure).__name__, valid_first=valid_first):
+                    prefix = json.dumps({'jsonrpc': '2.0', 'id': 'prior_request', 'method': 'ping'}) + '\n'
+                    stream = ObservedInput(prefix, failure=failure, fail_after_reads=int(valid_first))
+                    output = io.StringIO()
+                    self.protocol.main(stream, output, self.bridge)
+                    responses = [json.loads(line) for line in output.getvalue().splitlines()]
+                    expected = [{'jsonrpc': '2.0', 'id': 'prior_request', 'result': {}}] if valid_first else []
+                    expected.append({'jsonrpc': '2.0', 'id': None,
+                                     'error': {'code': -32600, 'message': 'Invalid request'}})
+                    self.assertEqual(responses, expected)
+                    self.assertEqual(stream.read_sizes, [self.protocol.MAX_REQUEST_CHARS + 1] * (int(valid_first) + 1))
+                    self.assertNotIn(secret, output.getvalue())
+        self.assertEqual(self.bridge.calls, [])
+
+    def test_invalid_utf8_stops_before_a_valid_send(self):
+        suffix = json.dumps(self.request('send_family_message', {'text': 'fixture', 'request_id': 'must_not_send'}))
+        with io.TextIOWrapper(io.BytesIO(b'\xff\n' + suffix.encode('utf-8') + b'\n'), encoding='utf-8') as stream:
+            output = io.StringIO()
+            self.protocol.main(stream, output, self.bridge)
+        self.assertEqual(json.loads(output.getvalue()),
+                         {'jsonrpc': '2.0', 'id': None, 'error': {'code': -32600, 'message': 'Invalid request'}})
         self.assertEqual(self.bridge.calls, [])
 
     def test_initialize_ping_list_and_notification_have_one_line_per_response(self):

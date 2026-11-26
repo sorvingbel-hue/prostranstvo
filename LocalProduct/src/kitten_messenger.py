@@ -332,7 +332,7 @@ class KittenCanvas(tk.Canvas):
 
 
 class KittenMessenger(tk.Tk):
-    def __init__(self, store=None, bridge=None, mini=False, start_background=True, controller=None, dialogue=None, chat_log=None, family_context=None, voice=None, study_monitor=None, transcriber=None, tricks_launcher=None, ai_settings=None, ai_gateway=None):
+    def __init__(self, store=None, bridge=None, mini=False, start_background=True, controller=None, dialogue=None, chat_log=None, family_context=None, voice=None, study_monitor=None, transcriber=None, tricks_launcher=None, ai_settings=None, ai_gateway=None, parent_guard=None):
         super().__init__()
         self.title('Мурчик · Написать папе')
         self.configure(bg=CREAM)
@@ -344,6 +344,7 @@ class KittenMessenger(tk.Tk):
         from cat_knowledge import ApprovedKnowledge
         self._ai_settings = ai_settings if ai_settings is not None else ApiSettings()
         self._ai_gateway = ai_gateway if ai_gateway is not None else ApiGateway(self._ai_settings)
+        self._parent_guard = parent_guard
         self._ai_window = None
         self._busy_ai_status = False
         self._ai_status_after_settings = None
@@ -544,6 +545,12 @@ class KittenMessenger(tk.Tk):
             self.notice.set('Закрой окно настроек ИИ, чтобы выбрать режим здесь.');return
         if self._ai_status_after_settings is not None:
             self.notice.set('Дождись проверки сохранённого режима.');return
+        if enabled:
+            from cat_ai_ui import require_parent_pin
+            try:
+                require_parent_pin(self, self._parent_guard)
+            except PermissionError as error:
+                self.notice.set(str(error));return
         self._pending_ai_mode = enabled
         self.ai_status.set('Сохраняю выбор режима…')
         self._enable_mode_controls(False)
@@ -589,10 +596,14 @@ class KittenMessenger(tk.Tk):
             self.notice.set('Дождись текущего ответа перед изменением режима ИИ.');return
         try:
             if self._ai_window is not None and self._ai_window.winfo_exists():
+                from cat_ai_ui import require_parent_pin
+                require_parent_pin(self, self._parent_guard)
                 self._ai_window.lift();return
             from cat_ai_ui import open_ai_settings
-            self._ai_window=open_ai_settings(self,self._ai_settings,self._ai_gateway)
+            self._ai_window=open_ai_settings(
+                self,self._ai_settings,self._ai_gateway,parent_guard=self._parent_guard)
             self._ai_window.bind('<Destroy>',self._ai_window_closed,add='+')
+        except PermissionError as error:self.notice.set(str(error))
         except Exception:self.notice.set('Настройки ИИ сейчас недоступны. Для локальной беседы можно выбрать «Офлайн».')
 
     def _ai_window_closed(self,event):

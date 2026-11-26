@@ -1,4 +1,5 @@
 """Exercise the actual package in an isolated workspace profile. No history collection."""
+import argparse
 import ctypes
 from ctypes import wintypes
 import hashlib
@@ -30,6 +31,47 @@ FIXTURE = PRODUCT / 'build' / ('release-check-' + time.strftime('%Y%m%d-%H%M%S')
 ENV = dict(os.environ, LOCALAPPDATA=str(FIXTURE / 'LocalAppData'), APPDATA=str(FIXTURE / 'Roaming'), PYTHONPATH='', PYTHONHOME='')
 # Deliberately no Python in the child's PATH. Windows components remain available.
 ENV['PATH'] = os.path.join(os.environ['SystemRoot'], 'System32') + ';' + os.environ['SystemRoot']
+
+# Portable contract; the personal-only SYSTEM maintenance tool must stay absent.
+PORTABLE_TOOL_NAMES = frozenset((
+    'computer_status', 'catalog_search', 'list_jobs', 'queue_inventory', 'queue_duplicates',
+    'prepare_transfer', 'prepare_undo', 'agent_apps_status', 'prepare_app_launch',
+    'launch_agent_app', 'prepare_browser_background', 'agent_browser_status',
+    'agent_browser_open', 'agent_browser_snapshot', 'agent_browser_click', 'agent_browser_fill',
+    'agent_browser_close', 'lock_computer', 'power_status', 'prepare_power_action',
+    'collect_maintenance_report', 'get_maintenance_report', 'submit_maintenance_advice',
+))
+FAMILY_TOOL_NAMES = frozenset(('family_channel_status', 'send_family_message', 'family_message_status'))
+SECURITY_TOOL_NAMES = frozenset(('collect_security_report', 'get_security_report'))
+
+
+def check_tool_contract(tools, expected):
+    assert type(tools) is list and all(type(tool) is dict for tool in tools), 'Invalid tools list'
+    names = [tool.get('name') for tool in tools]
+    assert all(type(name) is str for name in names), 'Invalid tool name'
+    assert len(names) == len(set(names)), 'Duplicate MCP tool name'
+    assert set(names) == set(expected), 'MCP tools differ from the reviewed contract'
+    for tool in tools:
+        schema = tool.get('inputSchema')
+        assert type(schema) is dict and schema.get('type') == 'object', 'Invalid tool schema'
+        assert schema.get('additionalProperties') is False, 'Tool accepts unknown arguments'
+    return {'tested': True, 'tool_count': len(names), 'tool_names': sorted(names)}
+
+
+def disabled_features_check(data, *, gui_tested):
+    activity = data / 'activity' / 'config.json'
+    if activity.exists():
+        assert json.loads(activity.read_text(encoding='utf-8-sig'))['enabled'] is False
+        activity_state = 'disabled'
+    else:
+        assert not gui_tested, 'Opening the full app must initialize its disabled activity settings'
+        activity_state = 'absent_inert'
+    assert not (data / 'family-messages' / 'telegram-config.json').exists()
+    assert not (data / 'browser-history' / 'schedule-config.json').exists()
+    # The loopback editor test, not a GUI constructor, creates this fixture.
+    assert json.loads((data / 'cat-companion' / 'tricks' / 'rules.json').read_text(encoding='utf-8-sig'))['enabled'] is False
+    return {'tested': True, 'activity': activity_state, 'telegram': 'absent',
+            'history_schedule': 'absent', 'tricks': 'disabled', 'gui_opened': gui_tested}
 
 def clean_archive_names(names):
     """Both distributions exclude personal state and unreviewed raw datasets."""
@@ -117,7 +159,8 @@ def approved_knowledge_check(archive):
 
 def run(command, stdin=None, seconds=60):
     result = subprocess.run([str(x) for x in command], input=stdin, capture_output=True,
-                            encoding='utf-8', env=ENV, timeout=seconds)
+                            encoding='utf-8', env=ENV, timeout=seconds,
+                            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
     if result.returncode:
         raise AssertionError((result.returncode, result.stdout[-1000:], result.stderr[-1000:]))
     return result.stdout.strip().lstrip('\ufeff')
@@ -316,9 +359,14 @@ def gui_check(core, mode='ui', title='Пространство · Local Beta'):
         assert not stderr.strip(), stderr
     return True
 
-def main():
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
+    parser.add_argument('--no-gui', action='store_true',
+                        help='Skip Tk, visible app/chat and Study launcher checks; report them as not tested')
+    args = parser.parse_args(argv)
     FIXTURE.mkdir(parents=True)
-    report = {'product': 'prostranstvo-local-beta', 'version': VERSION, 'checks': {}}
+    report = {'product': 'prostranstvo-local-beta', 'version': VERSION, 'checks': {},
+              'verification_mode': 'no_gui' if args.no_gui else 'full', 'visible_gui_tested': not args.no_gui}
     checks = report['checks']
     with zipfile.ZipFile(PORTABLE) as archive:
         names = archive.namelist()
@@ -444,7 +492,10 @@ def main():
     assert status['data'] == str(Path(ENV['LOCALAPPDATA']) / 'ProstranstvoLocalBeta' / 'data')
     assert not status['status']['system_service']['available'] and not status['status']['catalog_exists']
     checks['frozen_runtime_without_python_on_path'] = True
-    checks['tk_and_imports'] = json.loads(run([core, 'self-test']))
+    checks['tk_and_imports'] = json.loads(run([core, 'self-test', *(['--no-gui'] if args.no_gui else [])]))
+    assert checks['tk_and_imports']['tk_tested'] is (not args.no_gui)
+    if args.no_gui:
+        assert checks['tk_and_imports']['tk'] is None
     assert checks['tk_and_imports']['cat_ai'] == {'offline_default': True, 'approved_cards': 18,
                                                'session_name': True, 'no_network_calls': True}
     assert type(checks['tk_and_imports']['cat_ai']['approved_cards']) is int
@@ -483,7 +534,8 @@ def main():
     ]
     responses = [json.loads(line) for line in run([core, 'mcp'], '\n'.join(json.dumps(x) for x in requests) + '\n').splitlines()]
     assert [x['id'] for x in responses] == [1, 2, 3, 4]
-    assert len(responses[1]['result']['tools']) == 7
+    checks['stdio_mcp_tool_contract'] = check_tool_contract(responses[1]['result']['tools'], PORTABLE_TOOL_NAMES)
+    assert 'system_maintenance' not in checks['stdio_mcp_tool_contract']['tool_names']
     assert json.loads(responses[3]['result']['content'][0]['text']) == []
     checks['stdio_mcp_initialize_list_status_catalog'] = True
     family_requests = [
@@ -492,28 +544,44 @@ def main():
         {'jsonrpc': '2.0', 'id': 3, 'method': 'tools/call', 'params': {'name': 'family_channel_status', 'arguments': {}}},
     ]
     family = [json.loads(line) for line in run([core, 'family-mcp'], '\n'.join(json.dumps(x) for x in family_requests) + '\n').splitlines()]
-    assert len(family[1]['result']['tools']) == 3
+    checks['family_mcp_tool_contract'] = check_tool_contract(family[1]['result']['tools'], FAMILY_TOOL_NAMES)
     channel = json.loads(family[2]['result']['content'][0]['text'])
     assert channel['state'] == 'not_configured' and not channel['channel_ready']
     checks['family_mcp_status_unconfigured_without_delivery'] = True
-    run([app / 'Prostranstvo.exe', '--study-resume'])
+    security_requests = [
+        {'jsonrpc': '2.0', 'id': 1, 'method': 'initialize', 'params': {'protocolVersion': '2024-11-05'}},
+        {'jsonrpc': '2.0', 'id': 2, 'method': 'tools/list'},
+        {'jsonrpc': '2.0', 'id': 3, 'method': 'tools/call', 'params': {'name': 'get_security_report', 'arguments': {}}},
+        {'jsonrpc': '2.0', 'id': 4, 'method': 'tools/call', 'params': {'name': 'system_maintenance', 'arguments': {'command': 'repair'}}},
+    ]
+    security = [json.loads(line) for line in run([core, 'security-mcp'], '\n'.join(json.dumps(x) for x in security_requests) + '\n').splitlines()]
+    assert [row['id'] for row in security] == [1, 2, 3, 4]
+    checks['restricted_security_mcp_contract'] = check_tool_contract(security[1]['result']['tools'], SECURITY_TOOL_NAMES)
+    assert security[2]['result'].get('isError') is True
+    assert json.loads(security[2]['result']['content'][0]['text']) == {'error': 'security_report_missing'}
+    assert security[3]['error']['code'] == -32602
+    assert not (Path(status['data']) / 'security-report').exists(), 'Reading the missing report must stay inert'
+    checks['security_channel_does_not_collect_or_offer_system_commands'] = True
+    if args.no_gui:
+        checks['study_resume_launcher_exits_without_active_lease'] = {'tested': False, 'reason': 'no_gui_requested'}
+    else:
+        run([app / 'Prostranstvo.exe', '--study-resume'])
+        checks['study_resume_launcher_exits_without_active_lease'] = True
     assert not (Path(status['data']) / 'study' / 'active-session.json').exists()
-    checks['study_resume_launcher_exits_without_active_lease'] = True
-    checks['whole_app_open_close'] = gui_check(core)
+    checks['whole_app_open_close'] = ({'tested': False, 'reason': 'no_gui_requested'} if args.no_gui else gui_check(core))
     if (app / 'KittenMessenger.exe').exists():
-        checks['kitten_chat_open_close'] = gui_check(core, 'kitten', 'Мурчик · Написать папе')
+        checks['kitten_chat_open_close'] = ({'tested': False, 'reason': 'no_gui_requested'} if args.no_gui
+                                           else gui_check(core, 'kitten', 'Мурчик · Написать папе'))
         checks['native_pet_self_test'] = json.loads(run([app / 'NativeDesktopPet.exe', '--self-test']))
         assert (app / 'assets' / 'kitten-sprites-v1.png').is_file()
         assert (app / 'assets' / 'kitten-sprites-v2.png').is_file() and (app / 'assets' / 'kitten-portrait-v2.png').is_file()
         checks['kitten_asset_bundled'] = True
     data = Path(status['data'])
-    assert not json.loads((data / 'activity' / 'config.json').read_text())['enabled']
-    assert not (data / 'family-messages' / 'telegram-config.json').exists()
-    assert not (data / 'browser-history' / 'schedule-config.json').exists()
-    assert json.loads((data / 'cat-companion' / 'tricks' / 'rules.json').read_text(encoding='utf-8'))['enabled'] is False
-    checks['features_disabled_after_first_open'] = True
+    checks['disabled_feature_settings'] = disabled_features_check(data, gui_tested=not args.no_gui)
+    checks['features_disabled_after_first_open'] = ({'tested': False, 'reason': 'no_gui_requested'} if args.no_gui else True)
     assert not voice_data.exists(), 'Opening the app/chat must never start or save a microphone recording'
-    checks['no_voice_recording_after_gui_open'] = True
+    checks['no_voice_recording_after_gui_open'] = ({'tested': False, 'reason': 'no_gui_requested'} if args.no_gui else True)
+    checks['no_voice_recording_after_console_checks'] = True
     sentinel = data / 'preserve-fixture.txt'
     sentinel.write_text('synthetic data; preserve on update', encoding='utf-8')
     updated = json.loads(run([SETUP, '--install']))

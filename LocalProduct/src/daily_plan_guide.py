@@ -34,7 +34,7 @@ STEPS = (
      'Мама сможет посмотреть план и подтвердить его с родительским PIN.'),
     ('Собери экипировку',
      f'За весь список можно набрать {DAILY_POINTS_CAP} баллов в день. '
-     f'Они копятся, и у Стива появляются новые комплекты и кирки. '
+     'После проверки родителем они пополняют путь Стива: появляются новые комплекты и кирки. '
      f'На {REBIRTH_POINTS} баллах откроется незеритовый комплект. '
      'Тогда можно нажать «Перерождение» и начать путь заново.'),
     ('Хорошей игры!',
@@ -163,7 +163,7 @@ class DailyPlanGuide(tk.Toplevel):
         self._label(self.example, 'Твой маршрут', size=12, bold=True).pack(anchor='w', pady=(4, 8))
         for line in ('1. Выполни дела и собери алмазы.',
                      '2. Отправь список маме на проверку.',
-                     '3. Улучшай экипировку Стива.'):
+                     '3. После проверки улучшай экипировку Стива.'):
             self._label(self.example, line, size=11).pack(anchor='w', pady=3)
 
     def _sample_tasks(self):
@@ -196,12 +196,14 @@ class DailyPlanGuide(tk.Toplevel):
 
     def _update_checklist(self, completed_task=None):
         points = self._sample_points()
-        self.points_label.configure(text=f'Сегодня: {points} из {DAILY_POINTS_CAP}')
+        confirmed = points if self.example_review == 'approved' else 0
+        status = 'подтверждено' if self.example_review == 'approved' else 'ждёт проверки'
+        self.points_label.configure(text=f'Сделано: {points} из {DAILY_POINTS_CAP}\n{status}: {points}')
         tasks = self._sample_tasks()
         if completed_task is None:
-            self.scene.sync(tasks, points)
+            self.scene.sync(tasks, confirmed)
         else:
-            self.scene.celebrate(tasks, points, completed_task)
+            self.scene.celebrate(tasks, confirmed, completed_task)
 
     def _toggle_task(self, index, done):
         self.example_done[index] = done
@@ -225,7 +227,7 @@ class DailyPlanGuide(tk.Toplevel):
 
     def _update_review(self):
         if self.example_review == 'approved':
-            message = 'Пример: мама подтвердила план. Хорошей игры!'
+            message = 'Пример: мама подтвердила план. Баллы пополнили путь Стива. Хорошей игры!'
         elif self.example_review == 'submitted':
             message = 'Пример: список ждёт маминой проверки.'
         elif self.example_help:
@@ -258,7 +260,7 @@ class DailyPlanGuide(tk.Toplevel):
     def _equipment(self):
         points = 0 if self.example_reborn else REBIRTH_POINTS
         caption = ('Пример: новый путь · 0 баллов'
-                   if self.example_reborn else f'Пример: {points} баллов · полный комплект')
+                   if self.example_reborn else f'Пример: {points} баллов за 20 подтверждённых дней')
         toolbar = tk.Frame(self.example, bg=PANEL)
         toolbar.pack(fill='x')
         self._label(toolbar, caption, size=10, bold=True).pack(side='left')

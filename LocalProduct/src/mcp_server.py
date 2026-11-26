@@ -27,10 +27,11 @@ def call(name,a):
  raise ValueError('Unknown tool')
 TOOLS += APP_TOOLS
 TOOLS += CONTROL_TOOLS
-for line in sys.stdin:
+MAX_REQUEST_CHARS=1024*1024
+for line in iter(lambda: sys.stdin.readline(MAX_REQUEST_CHARS+1), ''):
  request=None
  try:
-  if len(line)>1024*1024:raise ValueError('Request too large')
+  if len(line)>MAX_REQUEST_CHARS:raise ValueError('Request too large')
   request=json.loads(line);ident=request.get('id');method=request.get('method')
   if ident is None:continue
   if method=='initialize':
@@ -48,3 +49,4 @@ for line in sys.stdin:
   print(json.dumps({'jsonrpc':'2.0','id':ident,'result':result},ensure_ascii=False),flush=True)
  except Exception as err:
   print(json.dumps({'jsonrpc':'2.0','id':request.get('id') if isinstance(request,dict) else None,'error':{'code':-32600,'message':str(err)}}),flush=True)
+  if len(line)>MAX_REQUEST_CHARS:break

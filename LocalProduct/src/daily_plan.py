@@ -1,6 +1,7 @@
 """Local daily checklist and Steve's progress with atomic, revision-checked writes."""
 
 from contextlib import contextmanager
+from copy import deepcopy
 from datetime import date
 import json
 import os
@@ -17,7 +18,8 @@ MAX_TASKS = 10
 MAX_TASK_LENGTH = 120
 MAX_TASK_MINUTES = 120
 MAX_FEEDBACK_LENGTH = 240
-MAX_FILE_BYTES = 8192
+MAX_HISTORY_PLANS = 366
+MAX_FILE_BYTES = 4 * 1024 * 1024
 TASK_POINTS = (10, 15, 20)
 DEFAULT_TASK_POINTS = 15
 DAILY_POINTS_CAP = 30
@@ -79,7 +81,7 @@ def _check_date(value):
 
 def _validate(plan):
     required = {'date', 'revision', 'status', 'game_minutes', 'feedback', 'tasks'}
-    if not isinstance(plan, dict) or not required <= plan.keys() <= required | {'study_session_id'}:
+    if not isinstance(plan, dict) or not required <= plan.keys() <= required | {'study_session_id', 'contract_revision', 'approval'}:
         raise DailyPlanError('Повреждён файл плана.')
     _check_date(plan['date'])
     revision = plan['revision']
@@ -87,6 +89,19 @@ def _validate(plan):
         raise DailyPlanError('Повреждена версия плана.')
     if plan['status'] not in PLAN_STATES:
         raise DailyPlanError('Повреждён статус плана.')
+    if 'contract_revision' in plan and (type(plan['contract_revision']) is not int or not 0 < plan['contract_revision'] < 2**128):
+        raise DailyPlanError('Повреждён договор наград.')
+    if 'approval' in plan:
+        approval = plan['approval']
+        if (plan['status'] != 'approved' or not isinstance(approval, dict)
+                or set(approval) != {'request_id', 'submitted_revision', 'quality_percent'}
+                or not isinstance(approval['request_id'], str)
+                or not re.fullmatch(r'[0-9a-f]{32}', approval['request_id'])
+                or type(approval['submitted_revision']) is not int
+                or not 0 < approval['submitted_revision'] < 2**128
+                or type(approval['quality_percent']) is not int
+                or not 0 <= approval['quality_percent'] <= 100):
+            raise DailyPlanError('Повреждено подтверждение родителя.')
     if 'study_session_id' in plan:
         session_id = plan['study_session_id']
         if (plan['status'] == 'open' or not isinstance(session_id, str)
@@ -115,15 +130,54 @@ def _validate(plan):
 
 
 def _initial_state(plan=None):
-    return {'version': 1, 'plan': plan, 'past_points': 0, 'rebirth_count': 0, 'rebirth_date': None}
+    return {
+        'version': 2, 'plan': plan, 'past_points': 0, 'rebirth_count': 0,
+        'rebirth_date': None, 'repeat_template': None, 'history': [],
+    }
+
+
+def _validate_template(template):
+    if not isinstance(template, dict) or template.keys() != {'game_minutes', 'tasks'}:
+        raise DailyPlanError('Повреждён повторяющийся план.')
+    _check_minutes(template['game_minutes'])
+    tasks = template['tasks']
+    if not isinstance(tasks, list) or not 1 <= len(tasks) <= MAX_TASKS:
+        raise DailyPlanError('Повреждён повторяющийся план.')
+    for task in tasks:
+        if not isinstance(task, dict) or not {'text'} <= task.keys() <= {
+            'text', 'estimated_minutes', 'points',
+        }:
+            raise DailyPlanError('Повреждён пункт повторяющегося плана.')
+        _clean_text(task['text'], MAX_TASK_LENGTH)
+        if 'estimated_minutes' in task:
+            _check_task_minutes(task['estimated_minutes'])
+        if 'points' in task:
+            _check_task_points(task['points'])
+
+
+def _migrate_legacy(state):
+    """Normalize old data in memory; only a later explicit change writes v2."""
+    migrated = {**state, 'version': 2, 'repeat_template': None, 'history': []}
+    plan = migrated['plan']
+    if (plan is not None and plan['status'] == 'approved'
+            and plan['date'] > (migrated['rebirth_date'] or '')):
+        migrated['past_points'] += _earned_points(plan)
+    return migrated
 
 
 def _validate_state(state):
     if not isinstance(state, dict):
         raise DailyPlanError('Повреждён файл плана.')
     if 'version' not in state:
-        return _initial_state(_validate(state))
-    if state.keys() != _initial_state().keys() or type(state['version']) is not int or state['version'] != 1:
+        legacy = {
+            'version': 1, 'plan': _validate(state), 'past_points': 0,
+            'rebirth_count': 0, 'rebirth_date': None,
+        }
+        return _migrate_legacy(legacy)
+    legacy_keys = {'version', 'plan', 'past_points', 'rebirth_count', 'rebirth_date'}
+    version = state['version']
+    if (type(version) is not int or version not in (1, 2)
+            or state.keys() != (legacy_keys if version == 1 else _initial_state().keys())):
         raise DailyPlanError('Неизвестный формат плана.')
     if any(type(state[key]) is not int or state[key] < 0 for key in ('past_points', 'rebirth_count')):
         raise DailyPlanError('Повреждён прогресс Стива.')
@@ -133,6 +187,21 @@ def _validate_state(state):
         raise DailyPlanError('Повреждён прогресс Стива.')
     if state['plan'] is not None:
         _validate(state['plan'])
+    if version == 1:
+        return _migrate_legacy(state)
+    if state['repeat_template'] is not None:
+        _validate_template(state['repeat_template'])
+    history = state['history']
+    if not isinstance(history, list) or len(history) > MAX_HISTORY_PLANS:
+        raise DailyPlanError('Повреждён архив планов.')
+    prior_date = ''
+    for plan in history:
+        _validate(plan)
+        if plan['date'] <= prior_date:
+            raise DailyPlanError('Повреждён порядок архива планов.')
+        prior_date = plan['date']
+    if state['plan'] is not None and state['plan']['date'] <= prior_date:
+        raise DailyPlanError('Повреждён порядок архива планов.')
     return state
 
 
@@ -144,16 +213,11 @@ def _earned_points(plan):
     return DAILY_POINTS_CAP * completed // sum(weights)
 
 
-def _unsettled_points(state):
-    plan = state['plan']
-    # The day of a rebirth has already contributed to the previous cycle.
-    if plan is None or plan['date'] <= (state['rebirth_date'] or ''):
-        return 0
-    return _earned_points(plan)
-
-
 def _latest_date(state):
-    return max(state['plan']['date'] if state['plan'] else '', state['rebirth_date'] or '')
+    return max(
+        state['plan']['date'] if state['plan'] else '', state['rebirth_date'] or '',
+        state['history'][-1]['date'] if state['history'] else '',
+    )
 
 
 def equipment_for_points(points):
@@ -192,18 +256,48 @@ class DailyPlan:
         plan = state['plan']
         return plan if plan is not None and plan['date'] == day else None
 
-    def read(self):
-        return self._today_plan(self._read_state(), self.today().isoformat())
+    @staticmethod
+    def _selected_plan(state, day, plan_date=None):
+        if plan_date is None:
+            return DailyPlan._today_plan(state, day)
+        _check_date(plan_date)
+        if plan_date > day:
+            raise DailyPlanError('Будущий план ещё недоступен.')
+        if state['plan'] is not None and state['plan']['date'] == plan_date:
+            return state['plan']
+        return next((plan for plan in state['history'] if plan['date'] == plan_date), None)
 
-    def snapshot(self):
-        """Read today's checklist and the matching equipment from one file snapshot."""
+    def read(self, plan_date=None):
+        return self._selected_plan(self._read_state(), self.today().isoformat(), plan_date)
+
+    def history(self):
+        """Return archived checklists, newest first, without changing stored data."""
+        return list(reversed(self._read_state()['history']))
+
+    def past_days(self):
+        """List past checklists, including a last day not yet moved to the archive."""
         state = self._read_state()
         day = self.today().isoformat()
-        plan = self._today_plan(state, day)
-        total_points = state['past_points'] + _unsettled_points(state)
+        plans = state['history']
+        if state['plan'] is not None and state['plan']['date'] < day:
+            plans = plans + [state['plan']]
+        return list(reversed(plans))
+
+    def snapshot(self, plan_date=None):
+        """Read a checklist and approved equipment progress from one file snapshot."""
+        state = self._read_state()
+        day = self.today().isoformat()
+        plan = self._selected_plan(state, day, plan_date)
+        total_points = state['past_points']
+        checked_points = _earned_points(plan)
+        approved_points = (checked_points * plan.get('approval', {}).get('quality_percent', 100) // 100
+                           if plan is not None and plan['status'] == 'approved' else 0)
+        plans = state['history'] + ([state['plan']] if state['plan'] is not None else [])
         current_tier, next_tier = equipment_for_points(total_points)
         return plan, {
-            'today_points': _earned_points(plan),
+            'today_points': checked_points,
+            'provisional_points': 0 if plan is not None and plan['status'] == 'approved' else checked_points,
+            'approved_today_points': approved_points,
             'planned_points': DAILY_POINTS_CAP if plan is not None else 0,
             'total_points': total_points,
             'daily_cap': DAILY_POINTS_CAP,
@@ -211,6 +305,10 @@ class DailyPlan:
             'next_tier': next_tier,
             'rebirth_count': state['rebirth_count'],
             'can_rebirth': total_points >= REBIRTH_POINTS and day >= _latest_date(state),
+            'repeat_daily': state['repeat_template'] is not None,
+            'pending_reviews': [plan for plan in reversed(plans) if plan['status'] == 'submitted'],
+            'history_count': len(state['history']),
+            'history_limit': MAX_HISTORY_PLANS,
         }
 
     def progress(self):
@@ -224,10 +322,12 @@ class DailyPlan:
             state = self._read_state()
             if day < _latest_date(state):
                 raise DailyPlanConflict('Дата на компьютере раньше сохранённого плана. Проверьте часы.')
+            original = deepcopy(state)
             yield state, day
             if self.today().isoformat() != day:
                 raise DailyPlanConflict('Наступил новый день. Обновите окно плана.')
-            self._write(_validate_state(state))
+            if state != original:
+                self._write(_validate_state(state))
 
     @staticmethod
     def _check_revision(expected_revision, current):
@@ -237,22 +337,60 @@ class DailyPlan:
             raise DailyPlanConflict('План уже изменился. Обновите окно и попробуйте снова.')
 
     @contextmanager
-    def _change(self, expected_revision):
+    def _change(self, expected_revision, plan_date=None):
         with self._transaction() as (state, day):
-            current = self._today_plan(state, day)
+            current = self._selected_plan(state, day, plan_date)
             self._check_revision(expected_revision, current)
             if current is None:
-                state['past_points'] += _unsettled_points(state)
+                if plan_date is not None and plan_date != day:
+                    raise DailyPlanError('Сохранённый план не найден.')
+                self._archive_current(state)
                 current = {'date': day}
-            yield current
+                state['plan'] = current
+            if 'revision' in current:
+                current.setdefault('contract_revision', current['revision'])
+            yield current, state
             current['revision'] = uuid.uuid4().int
-            state['plan'] = current
+
+    @staticmethod
+    def _archive_current(state):
+        if state['plan'] is not None:
+            if len(state['history']) >= MAX_HISTORY_PLANS:
+                raise DailyPlanError('Архив планов заполнен. Старые планы сохранены; новый план пока не создан.')
+            state['history'].append(state['plan'])
+            state['plan'] = None
+
+    def ensure_today(self):
+        """Materialize one fresh daily checklist only for an enabled parent template."""
+        state = self._read_state()
+        day = self.today().isoformat()
+        if day < _latest_date(state):
+            raise DailyPlanConflict('Дата на компьютере раньше сохранённого плана. Проверьте часы.')
+        current = self._today_plan(state, day)
+        if current is not None or state['repeat_template'] is None:
+            return current
+        with self._transaction() as (state, day):
+            current = self._today_plan(state, day)
+            if current is None and state['repeat_template'] is not None:
+                self._archive_current(state)
+                template = state['repeat_template']
+                current = {
+                    'date': day, 'revision': uuid.uuid4().int, 'status': 'open',
+                    'contract_revision': uuid.uuid4().int,
+                    'game_minutes': template['game_minutes'], 'feedback': '',
+                    'tasks': [{**task, 'status': 'pending'} for task in template['tasks']],
+                }
+                state['plan'] = current
+        return current
 
     def _write(self, state):
+        serialized = json.dumps(state, ensure_ascii=False).encode('utf-8')
+        if len(serialized) > MAX_FILE_BYTES:
+            raise DailyPlanError('Файл плана слишком большой; прежние данные сохранены.')
         descriptor, temporary = tempfile.mkstemp(prefix='.today-', suffix='.tmp', dir=self.root)
         try:
-            with os.fdopen(descriptor, 'w', encoding='utf-8') as stream:
-                json.dump(state, stream, ensure_ascii=False)
+            with os.fdopen(descriptor, 'wb') as stream:
+                stream.write(serialized)
                 stream.flush()
                 os.fsync(stream.fileno())
             no_links(self.path, True)
@@ -261,7 +399,10 @@ class DailyPlan:
             if os.path.exists(temporary):
                 os.unlink(temporary)
 
-    def publish(self, tasks, game_minutes, *, expected_revision, task_minutes=None, task_points=None):
+    def publish(self, tasks, game_minutes, *, expected_revision, task_minutes=None, task_points=None,
+                repeat_daily=None):
+        if repeat_daily is not None and type(repeat_daily) is not bool:
+            raise DailyPlanError('Неверная настройка ежедневного повторения.')
         if not isinstance(tasks, (list, tuple)) or not 1 <= len(tasks) <= MAX_TASKS:
             raise DailyPlanError(f'Добавьте от одного до {MAX_TASKS} дел.')
         if task_minutes is not None and (
@@ -283,21 +424,33 @@ class DailyPlan:
                 _check_task_points(weight)
                 item['points'] = weight
         _check_minutes(game_minutes)
-        with self._change(expected_revision) as plan:
+        with self._change(expected_revision) as (plan, state):
             if plan.get('status') in ('submitted', 'approved'):
                 raise DailyPlanError('Изменить можно только открытый план.')
-            plan.update(status='open', game_minutes=game_minutes, feedback='', tasks=items)
+            plan.update(status='open', game_minutes=game_minutes, feedback='', tasks=items,
+                        contract_revision=uuid.uuid4().int)
+            if repeat_daily is False:
+                state['repeat_template'] = None
+            elif repeat_daily is True or state['repeat_template'] is not None:
+                state['repeat_template'] = {
+                    'game_minutes': game_minutes,
+                    'tasks': [{key: value for key, value in task.items() if key != 'status'} for task in items],
+                }
         return plan
 
-    def rebirth(self, *, expected_revision, expected_cycle):
+    def rebirth(self, *, expected_revision, expected_cycle, expected_total_points):
         if type(expected_cycle) is not int or expected_cycle < 0:
             raise DailyPlanError('Неверная версия прогресса.')
+        if type(expected_total_points) is not int or expected_total_points < 0:
+            raise DailyPlanError('Неверное количество подтверждённых баллов.')
         with self._transaction() as (state, day):
             current = self._today_plan(state, day)
             self._check_revision(expected_revision, current)
             if expected_cycle != state['rebirth_count']:
                 raise DailyPlanConflict('Прогресс уже изменился. Обновите окно и попробуйте снова.')
-            total_points = state['past_points'] + _unsettled_points(state)
+            total_points = state['past_points']
+            if expected_total_points != total_points:
+                raise DailyPlanConflict('Баллы уже изменились. Обновите окно и попробуйте снова.')
             if total_points < REBIRTH_POINTS:
                 raise DailyPlanError('Перерождение доступно после получения последнего комплекта.')
             state.update(past_points=0, rebirth_count=expected_cycle + 1, rebirth_date=day)
@@ -311,17 +464,17 @@ class DailyPlan:
             raise DailyPlanError('Выберите пункт из списка.')
         return plan['tasks'][index]
 
-    def set_task(self, index, status, *, expected_revision):
+    def set_task(self, index, status, *, expected_revision, plan_date=None):
         if status not in TASK_STATES:
             raise DailyPlanError('Неверная отметка дела.')
-        with self._change(expected_revision) as plan:
+        with self._change(expected_revision, plan_date) as (plan, _state):
             if plan.get('status') != 'open':
                 raise DailyPlanError('Отметки доступны в открытом плане.')
             self._task(plan, index)['status'] = status
         return plan
 
-    def submit(self, *, expected_revision, study_session_id=None):
-        with self._change(expected_revision) as plan:
+    def submit(self, *, expected_revision, study_session_id=None, plan_date=None):
+        with self._change(expected_revision, plan_date) as (plan, _state):
             if plan.get('status') != 'open' or any(task['status'] != 'done' for task in plan['tasks']):
                 raise DailyPlanError('Отметь все дела, чтобы отправить план на проверку.')
             plan['status'] = 'submitted'
@@ -329,15 +482,37 @@ class DailyPlan:
                 plan['study_session_id'] = study_session_id
         return plan
 
-    def review(self, *, approved, feedback, expected_revision, task_index=None):
+    def review(self, *, approved, feedback, expected_revision, task_index=None, plan_date=None,
+               approval_id=None, quality_percent=100):
         if type(approved) is not bool or (approved and task_index is not None):
             raise DailyPlanError('Неверное решение по плану.')
+        if ((expected_revision is not None and (type(expected_revision) is not int
+                or not 0 < expected_revision < 2**128))
+                or (approval_id is not None and expected_revision is None)):
+            raise DailyPlanError('Неверная версия подтверждения.')
+        if (type(quality_percent) is not int or not 0 <= quality_percent <= 100
+                or (quality_percent != 100 and approval_id is None)
+                or (approval_id is not None and (not approved or not isinstance(approval_id, str)
+                    or not re.fullmatch(r'[0-9a-f]{32}', approval_id)))):
+            raise DailyPlanError('Неверное подтверждение родителя.')
         feedback = _clean_text(feedback, MAX_FEEDBACK_LENGTH, allow_empty=approved)
-        with self._change(expected_revision) as plan:
+        if approval_id is not None:
+            existing = self.read(plan_date=plan_date)
+            if existing is not None and existing['status'] == 'approved':
+                if existing.get('feedback') == feedback and existing.get('approval') == {'request_id': approval_id,
+                        'submitted_revision': expected_revision, 'quality_percent': quality_percent}:
+                    return existing
+                raise DailyPlanConflict('Этот план уже подтверждён другим решением.')
+        with self._change(expected_revision, plan_date) as (plan, state):
             if plan.get('status') != 'submitted':
                 raise DailyPlanError('План должен быть отправлен на проверку.')
             if not approved:
                 self._task(plan, task_index)['status'] = 'pending'
                 plan.pop('study_session_id', None)
+            else:
+                state['past_points'] += _earned_points(plan) * quality_percent // 100
+                if approval_id is not None:
+                    plan['approval'] = {'request_id': approval_id, 'submitted_revision': expected_revision,
+                                        'quality_percent': quality_percent}
             plan.update(status='approved' if approved else 'open', feedback=feedback)
         return plan

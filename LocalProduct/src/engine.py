@@ -233,28 +233,38 @@ CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY,at TEXT,job TEXT,messag
   src=self.checked(r['src']);dst=self.checked(r['dst']);self.checked(dst.parent,True)
   no_alternate_streams(src)
   if os.path.lexists(dst):raise ValueError('Цель уже существует: '+str(dst))
-  tmp=dst.parent/('.companion-'+j+'-'+str(n)+'.partial');created=False;c=None;source=None;marked=False;removed=False;committed=False
+  tmp=dst.parent/('.companion-'+j+'-'+str(n)+'.partial');tmp_identity=None;created=False;c=None;source=None;marked=False;removed=False;committed=False;receipt=False
   try:
+   if self.cancelled(j):raise InterruptedError('Отменено')
    source=locked_file(src,mode=='move')
    st=os.fstat(source.fileno())
    if dict(size=st.st_size,mtime_ns=st.st_mtime_ns,ino=st.st_ino)!=r['stamp']:raise ValueError('Источник изменён после планирования')
    with open(tmp,'xb') as target:
+    own=os.fstat(target.fileno());tmp_identity=(own.st_dev,own.st_ino)
     h=hashlib.sha256()
     for block in iter(lambda:source.read(1024*1024),b''):
      if self.cancelled(j):raise InterruptedError('Отменено')
      target.write(block);h.update(block)
     target.flush();os.fsync(target.fileno())
+   if self.cancelled(j):raise InterruptedError('Отменено')
    if h.hexdigest()!=r['sha']:raise ValueError('Источник изменился после планирования')
+   own=os.lstat(tmp)
+   if not stat.S_ISREG(own.st_mode) or own.st_nlink!=1 or (own.st_dev,own.st_ino)!=tmp_identity:raise ValueError('Временная копия заменена; перенос остановлен')
    shutil.copystat(src,tmp)
+   own=os.lstat(tmp)
+   if not stat.S_ISREG(own.st_mode) or own.st_nlink!=1 or (own.st_dev,own.st_ino)!=tmp_identity:raise ValueError('Временная копия заменена; перенос остановлен')
    if os.name=='nt':os.rename(tmp,dst)
    else:os.link(tmp,dst);tmp.unlink()
    created=True
    if digest(dst)!=r['sha']:raise ValueError('Проверка копии не пройдена')
    with self.connect() as own:own.execute('INSERT INTO receipts VALUES(?,?,?,?,?,?,?,?)',(j,n,str(src),str(dst),r['sha'],r['stamp']['size'],r['index_id'],'copied'))
+   receipt=True
    if mode=='move':
+    if self.cancelled(j):raise InterruptedError('Отменено')
     c=self.index_connection(True)
     if c:c.execute('BEGIN IMMEDIATE')
     self.update_index(c,r)
+    if self.cancelled(j):raise InterruptedError('Отменено')
     if os.name=='nt':mark_delete(source,True);marked=True
     else:src.unlink();removed=True
     if c:c.commit()
@@ -272,12 +282,24 @@ CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY,at TEXT,job TEXT,messag
     shutil.copystat(dst,src)
     if digest(src)==r['sha']:removed=False
    if created and not removed and not committed and dst.exists() and digest(dst)==r['sha']:dst.unlink()
+   if receipt and not committed:
+    # Record only a proven rollback; unknown outcomes still require recovery review.
+    try:
+     if src.is_file() and not os.path.lexists(dst) and digest(src)==r['sha']:
+      with self.connect() as own:own.execute("UPDATE receipts SET state='rolled_back' WHERE job=? AND n=? AND state='copied'",(j,n))
+    except (OSError,sqlite3.Error):pass
    self.event(j,'Операция прервана; квитанция сохранена')
    raise
   finally:
    if source is not None:source.close()
    if c:c.close()
-   if tmp.exists():tmp.unlink()
+   # A pre-existing/replaced partial is not ours, even when the name matches.
+   # Cleanup must not mask the original failure or delete somebody else's file.
+   if tmp_identity is not None:
+    try:
+     own=os.lstat(tmp)
+     if stat.S_ISREG(own.st_mode) and own.st_nlink==1 and (own.st_dev,own.st_ino)==tmp_identity:tmp.unlink()
+    except OSError:pass
  def undo(self,j):
   original=self.get(j)
   if original['kind']!='transfer' or original['payload']['mode']!='move':raise ValueError('Обратный перенос доступен для перемещений')
@@ -318,7 +340,9 @@ CREATE TABLE IF NOT EXISTS events(id INTEGER PRIMARY KEY,at TEXT,job TEXT,messag
      report=self.data/(j+'.json');report.write_text(json.dumps(result,ensure_ascii=False,indent=2),encoding='utf-8')
      result['report']=str(report)
     elif r['kind']=='transfer':
-     for n,record in enumerate(payload['records']):self.transfer_one(j,n,record,payload['mode'])
+     for n,record in enumerate(payload['records']):
+      if self.cancelled(j):raise InterruptedError('Отменено')
+      self.transfer_one(j,n,record,payload['mode'])
      result=dict(verified_files=len(payload['records']),mode=payload['mode'])
     else:raise ValueError('Неизвестный вид задания')
     with self.connect() as c:c.execute("UPDATE jobs SET status='completed',result=?,updated=? WHERE id=?",(json.dumps(result,ensure_ascii=False),now(),j))

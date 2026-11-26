@@ -26,7 +26,6 @@ def exclusive_lock(path,blocking=True):
  no_links(path);f=open(path,"a+b")
  try:
   no_links(path,True);f.seek(0)
-  if not f.read(1):f.write(b"0");f.flush()
   if os.name=="nt":
    import msvcrt
    end=time.monotonic()+3

@@ -92,6 +92,34 @@ class StudyResume:
             raise ValueError('Не удалось определить время Windows')
         return min(value['duration_seconds'], max(0, math.ceil(value['expires_utc'] - now)))
 
+    def activate_if_empty(self, minutes=0, *, session_id):
+        """CAS return lease: a timer can never overwrite a newer parent session."""
+        if (type(minutes) is not int or not 0 <= minutes <= 240
+                or not isinstance(session_id, str) or not re.fullmatch(r'[0-9a-f]{32}', session_id)):
+            raise ValueError('Неверный возврат режима уроков')
+        now = self.clock()
+        if type(now) not in (int, float) or not math.isfinite(now) or now <= 0:
+            raise ValueError('Не удалось определить время Windows')
+        value = _validate({'version': 1, 'session_id': session_id,
+            'expires_utc': now + minutes * 60 if minutes else None, 'duration_seconds': minutes * 60})
+        no_links(self.root).mkdir(parents=True, exist_ok=True)
+        with exclusive_lock(self.root / 'session.lock'):
+            current = self.read()
+            if current is not None:
+                return current if current['session_id'] == session_id else None
+            descriptor, temporary = tempfile.mkstemp(prefix='.study-return-', suffix='.tmp', dir=self.root)
+            try:
+                with os.fdopen(descriptor, 'w', encoding='utf-8') as stream:
+                    json.dump(value, stream, allow_nan=False)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                no_links(self.path, self.path.exists())
+                os.replace(temporary, self.path)
+            finally:
+                if os.path.exists(temporary):
+                    os.unlink(temporary)
+        return value
+
     def clear(self, session_id):
         if not isinstance(session_id, str) or not re.fullmatch(r'[0-9a-f]{32}', session_id):
             raise ValueError('Неверный идентификатор режима уроков')

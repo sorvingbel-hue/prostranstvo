@@ -4,6 +4,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 """Finite lease recovery with fake data/desktop and an unshown Tk root."""
 import json
 import math
+from datetime import date, timedelta
 from pathlib import Path
 import tempfile
 import tkinter as tk
@@ -129,7 +130,8 @@ class PersistentPanelTests(unittest.TestCase):
 
     def create(self):
         self.panel = PersistentStudyPanel(self.root, settings=self.settings, session=self.session,
-                                          guard=self.guard, resume=self.resume)
+                                          guard=self.guard, resume=self.resume,
+                                          ensure_play_running=lambda resume:None)
         self.addCleanup(self.panel.close)
         return self.panel
 
@@ -612,6 +614,29 @@ class PersistentPanelTests(unittest.TestCase):
         self.assertIsNone(popup.window)
         self.assertTrue(panel.session.active)
         self.assertIsNotNone(panel.active_study_id())
+
+    def test_repeating_plan_materializes_before_study_popup_lookup(self):
+        panel = self.create()
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        day = [date.today() - timedelta(days=1)]
+        store = DailyPlan(Path(directory.name) / 'plan', today=lambda: day[0])
+        previous = store.publish(['Synthetic recurring task'], 45,
+                                 expected_revision=None, repeat_daily=True)
+        day[0] += timedelta(days=1)
+        self.assertIsNone(store.read())
+        self.assertFalse(panel.session.active)
+        panel.enable_plan_popup(store=store)
+        with mock.patch.object(tk.Toplevel, 'deiconify'):
+            self.assertTrue(panel.start_lessons(duration_minutes=30))
+            self.tick()
+        self.assertIsNotNone(panel._plan_popup.window)
+        current = store.read()
+        self.assertEqual(current['date'], day[0].isoformat())
+        self.assertNotEqual(current['revision'], previous['revision'])
+        self.assertEqual(current['tasks'][0]['status'], 'pending')
+        self.assertEqual(len(store.history()), 1)
+        self.assertTrue(panel.session.active)
 
     def test_startup_session_without_current_plan_does_not_open_popup(self):
         self.resume.activate(30)
