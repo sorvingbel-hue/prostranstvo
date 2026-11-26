@@ -1,3 +1,25 @@
+# Prostranstvo - source QA snapshot 0.1.24
+
+Current source-QA candidate: **0.1.24**, verified locally on 26 November 2026. This update publishes reviewed source and a redacted evidence summary for independent QA. It does not release binaries or complete household acceptance.
+
+- Parent-approved plans now support persistent play deadlines, optional whole-plan quality and two local goals. An opt-in hourly cycle offers 60 minutes of play, then at least 10 minutes for a useful task and parent PIN approval before another play interval. It is disabled by default; a child's checkbox or elapsed break alone cannot release it. These are local contracts; no Minecraft items, money or automatic purchases are delivered.
+- Study/Play/plan identity checks protect a newer session from stale approvals. Version 0.1.24 repairs stale play state, shows hourly-cycle errors and keeper freshness, and records an executed-code contract. Reading a stale status file or replacing a source file does not establish current enforcement.
+- File transfer now preserves foreign/replaced partial files and handles empty-file and late cancellation. Cache receipts retain partial-analysis/errors separately from execution. Existing uncertain results, exact/ancestor identity holds and no-auto-retry boundaries remain in place.
+- The board reserves its controls in compact windows and defers dismissal until callbacks finish. The desktop-control MCP has explicit opt-in input and a STOP control. Registration is not proof that an existing client has reloaded it; no stealth desktop control or authentication bypass is provided.
+- Telegram parent-plan commands are implemented behind intentional pairing and identity validation. The household channel is not claimed connected or delivered; hourly-break approval over Telegram remains future work. Per-task quality, revised extra play grants, offline school scheduling, remote installation and a broader security shield remain separate roadmap items.
+- Local Windows source suite: **1737 run / 1731 passed / 6 skipped / 0 failures or errors**, 200.183 seconds, CPython 3.13.18, on an owned non-input Windows desktop. Three native owned-window Study fixture tests passed separately and overlap three of those six skips. The remaining three skips concern unavailable symlink creation. These results are not added together into a new total.
+- Actual installed legacy-module checks: **38 discovered / 37 passed / 1 explicit beta-only MCP skip**. Package verification checked **1092 manifest files**. A real CLI installer and upgrade ran under disposable LOCALAPPDATA, preserved a test-data sentinel, and verified 1092 installed files plus 1092 backup files. GUI install/uninstall, real uninstaller dispatch and clean-machine acceptance were not exercised.
+- The installed source was updated with backup, but existing family processes were not restarted. Live family runtime loading, real games, a full 60/10 cycle, voice, account connections, sleep/sign-in/reboot and clean Windows install/update/uninstall remain open. A shared-account parent PIN is a UI boundary, not account isolation. Existing security and license gates remain open.
+- Main, LearningModule, accepted binary art and unrelated repository content are preserved. No user plans, PIN records, personal inventories, browser profiles, private logs, installers or bundled runtime binaries are included. The build baseline is final CPython 3.13.18 or newer on the 3.13 line; see runtime provenance and the retained license limits before redistribution.
+
+See [redacted evidence](LocalProduct/docs/QA-0.1.24-EVIDENCE.json), [daily-board contract](LocalProduct/docs/DAILY-BOARD-RU.md), [roadmap and release gates](LocalProduct/docs/PRODUCT-ROADMAP-RU.md), and [runtime provenance](LocalProduct/docs/RELEASE-PYTHON-RUNTIME-RU.txt).
+
+---
+
+## Retained historical snapshot through 0.1.20
+
+The following dated material is historical. Its feature limitations and test totals do not override the current 0.1.24 summary above.
+
 # Prostranstvo - source QA snapshot 0.1.20
 
 Current source-QA baseline: candidate 0.1.20, 19 November 2026 (Pacific time). This source-only update adds the daily-board changes to the accepted QA tree. It includes no installers, private profiles or personal daily-plan data, and does not establish completion of the whole product concept.
@@ -74,3 +96,4 @@ python -m venv build/venv
 Рабочие настройки, ключи, семейная переписка, история браузеров, скриншоты, базы данных, исполняемые сборки и локальные профили исключены. Пользовательские данные приложение хранит отдельно от исходников.
 
 Репозиторий открыт для QA. Общая лицензия на свободное распространение проекта пока не выбрана; лицензии сторонних компонентов сохранены. После возврата репозитория в private уже скачанные копии останутся у получателей.
+

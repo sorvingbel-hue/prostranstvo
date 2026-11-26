@@ -33,6 +33,10 @@ SOURCES += ['storage_audit.py']
 SOURCES += ['storage_tasks.py', 'storage_ui.py', 'security_report.py', 'security_ui.py', 'security_mcp.py']
 SOURCES += ['cache_cleanup.py', 'cache_cleanup_ui.py']
 SOURCES += ['application_removal.py', 'application_removal_ui.py']
+SOURCES += ['desktop_control.py', 'desktop_control_mcp.py', 'desktop_control_ui.py']
+SOURCES += ['play_session.py', 'board_approval.py', 'family_rewards.py', 'family_rewards_ui.py',
+            'board_telegram.py', 'board_remote.py']
+SOURCES += ['hourly_break.py', 'hourly_break_ui.py', 'hourly_cycle.py']
 
 MINIMUM_PYTHON_PATCH = 18
 FROZEN_CHECK_TIMEOUT = 45
@@ -204,6 +208,7 @@ def main():
     shutil.copy2(PRODUCT / 'docs' / 'AGENT-CONTROL-RU.txt', stage / 'AGENT-CONTROL-RU.txt')
     shutil.copy2(PRODUCT / 'docs' / 'WINDOWS-HEALTH-RU.txt', stage / 'WINDOWS-HEALTH-RU.txt')
     shutil.copy2(PRODUCT / 'docs' / 'STORAGE-AUDIT-RU.txt', stage / 'STORAGE-AUDIT-RU.txt')
+    shutil.copy2(PRODUCT / 'docs' / 'DESKTOP-CONTROL-RU.md', stage / 'DESKTOP-CONTROL-RU.md')
     for name in ('SECURITY-REPORT-RU.txt', 'SECURITY-CHANNEL-RU.txt', 'STORAGE-TASKS-RU.txt', 'CACHE-CLEANUP-RU.txt', 'APPLICATION-REMOVAL-RU.txt', 'OFFLINE-FAMILY-SCENARIOS-RU.md', 'PRODUCT-ROADMAP-RU.md', 'RELEASE-PYTHON-RUNTIME-RU.txt', 'DAILY-BOARD-RU.md', 'AGENT-COLLABORATION-RU.md', 'REMOTE-APPLICATION-INSTALL-RU.md'):
         shutil.copy2(PRODUCT / 'docs' / name, stage / name)
     licenses = stage / 'licenses'

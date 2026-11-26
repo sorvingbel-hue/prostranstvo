@@ -25,6 +25,9 @@ SELF_TEST_MODULES = (
     'storage_tasks', 'storage_ui', 'security_report', 'security_ui', 'security_mcp',
     'cache_cleanup', 'cache_cleanup_ui',
     'application_removal', 'application_removal_ui',
+    'desktop_control', 'desktop_control_mcp', 'desktop_control_ui',
+    'play_session', 'board_approval', 'family_rewards', 'family_rewards_ui', 'board_telegram', 'board_remote',
+    'hourly_break', 'hourly_break_ui', 'hourly_cycle',
 )
 
 class GuiLock:
@@ -70,7 +73,7 @@ def prepare_uninstall():
 
 def main():
     parser = argparse.ArgumentParser(description='Пространство Local Beta', allow_abbrev=False)
-    parser.add_argument('mode', choices=('ui', 'messages', 'reply', 'kitten', 'pet', 'activity-agent', 'family-agent', 'history-collect', 'mcp', 'family-mcp', 'security-mcp', 'study-resume', 'status', 'self-test', 'prepare-uninstall', 'speech-transcribe', 'tricks', 'power-worker', 'storage-worker'))
+    parser.add_argument('mode', choices=('ui', 'messages', 'reply', 'kitten', 'pet', 'activity-agent', 'family-agent', 'history-collect', 'mcp', 'family-mcp', 'security-mcp', 'desktop-mcp', 'study-resume', 'status', 'self-test', 'prepare-uninstall', 'speech-transcribe', 'tricks', 'power-worker', 'storage-worker'))
     parser.add_argument('--activity', action='store_true')
     parser.add_argument('--messages', action='store_true')
     parser.add_argument('--setup', action='store_true')
@@ -86,7 +89,24 @@ def main():
     parser.add_argument('--task-id')
     parser.add_argument('--no-gui', action='store_true', help='Self-test imports/offline logic without creating Tk')
     parser.add_argument('--runtime-only', action='store_true', help='Self-test runtime metadata only; no assets or Tk')
+    parser.add_argument('--enable-input', action='store_true', help='Explicit desktop-mcp input session')
+    parser.add_argument('--session-seconds', type=int, default=None)
+    parser.add_argument('--stop-file', default=None)
     args = parser.parse_args()
+    if args.mode != 'desktop-mcp' and (args.enable_input or args.session_seconds is not None or args.stop_file is not None):
+        parser.error('Desktop control options are only supported for desktop-mcp')
+    if args.mode == 'desktop-mcp':
+        if any((args.activity, args.messages, args.setup, args.background, args.ready_stdout,
+                args.reply_to, args.mini, args.greet, args.open, args.serve_only,
+                args.request_id, args.worker_id, args.task_id, args.no_gui, args.runtime_only)):
+            parser.error('Desktop MCP accepts only --enable-input, --session-seconds and --stop-file')
+        options = ['--enable-input'] if args.enable_input else []
+        if args.session_seconds is not None:
+            options += ['--session-seconds', str(args.session_seconds)]
+        if args.stop_file is not None:
+            options += ['--stop-file', args.stop_file]
+        from desktop_control_mcp import main as desktop_main
+        return desktop_main(options)
     if args.no_gui and args.mode != 'self-test':
         parser.error('--no-gui is only supported for self-test')
     if args.runtime_only:

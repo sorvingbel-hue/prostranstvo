@@ -130,7 +130,8 @@ class PersistentPanelTests(unittest.TestCase):
 
     def create(self):
         self.panel = PersistentStudyPanel(self.root, settings=self.settings, session=self.session,
-                                          guard=self.guard, resume=self.resume)
+                                          guard=self.guard, resume=self.resume,
+                                          ensure_play_running=lambda resume:None)
         self.addCleanup(self.panel.close)
         return self.panel
 

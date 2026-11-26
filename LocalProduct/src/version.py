@@ -1,2 +1,2 @@
 """Shared application and distribution version."""
-VERSION = '0.1.20'
+VERSION = '0.1.24'

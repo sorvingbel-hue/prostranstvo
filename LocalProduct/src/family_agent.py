@@ -181,6 +181,13 @@ def run(store=None, settings=None, stop=None, presenter=None):
     presenter = presenter or MessagePresenter(store)
     with WorkerLock(store):
         store.recover_sending()
+        from board_remote import BoardRemote
+        board = None
+        try:
+            board = BoardRemote(store, settings)
+            board.recover()
+        except Exception:
+            board = None
         write_state(store, running=True, phase="starting", errors=[])
         try:
             while not stop.is_set():
@@ -193,9 +200,16 @@ def run(store=None, settings=None, stop=None, presenter=None):
                 except Exception:
                     errors.append("outgoing_unavailable")
                 try:
-                    settings.poll_incoming(store)
+                    settings.poll_incoming(store, command_handler=board)
                 except Exception:
                     errors.append("incoming_unavailable")
+                try:
+                    if board is None:
+                        errors.append('board_unavailable')
+                    else:
+                        board.tick()
+                except Exception:
+                    errors.append("board_unavailable")
                 try:
                     presenter.tick()
                 except Exception:

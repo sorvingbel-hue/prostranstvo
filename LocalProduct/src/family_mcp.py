@@ -6,6 +6,8 @@ import sys
 from family_bridge import FamilyBridge
 from family_telegram import TelegramError
 
+MAX_REQUEST_CHARS = 1024 * 1024
+
 TOOLS = [
     {'name': 'family_channel_status', 'description': 'Проверить подключение фиксированного Telegram родителя без раскрытия токена и переписки.',
      'inputSchema': {'type': 'object', 'properties': {}, 'additionalProperties': False},
@@ -45,10 +47,19 @@ def main(input_stream=None, output_stream=None, bridge=None):
     for stream in (input_stream, output_stream):
         if hasattr(stream, 'reconfigure'):
             stream.reconfigure(encoding='utf-8')
-    for line in input_stream:
+    while True:
+        try:
+            line = input_stream.readline(MAX_REQUEST_CHARS + 1)
+        except (UnicodeError, OSError, ValueError):
+            output_stream.write(json.dumps({'jsonrpc': '2.0', 'id': None,
+                                           'error': {'code': -32600, 'message': 'Invalid request'}}) + '\n')
+            output_stream.flush()
+            return
+        if line == '':
+            return
         request = None
         try:
-            if len(line) > 1024 * 1024:
+            if len(line) > MAX_REQUEST_CHARS:
                 raise ValueError('request_too_large')
             request = json.loads(line)
             if not isinstance(request, dict):
@@ -85,6 +96,8 @@ def main(input_stream=None, output_stream=None, bridge=None):
             output_stream.write(json.dumps({'jsonrpc': '2.0', 'id': request.get('id') if isinstance(request, dict) else None,
                                            'error': {'code': -32600, 'message': 'Invalid request'}}) + '\n')
             output_stream.flush()
+            if len(line) > MAX_REQUEST_CHARS:
+                return
 
 if __name__ == '__main__':
     main()

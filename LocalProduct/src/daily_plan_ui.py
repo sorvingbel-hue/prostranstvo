@@ -15,6 +15,10 @@ from daily_plan import (
 from daily_plan_animation import DailyPlanAnimation
 from daily_plan_guide import open_daily_plan_guide
 from study_guard import StudyGuard
+from family_rewards_ui import RewardsPanel
+from board_approval import BoardApproval
+from family_rewards import RewardBook
+from hourly_break_ui import HourlyBreakPanel
 
 
 STUDY_DURATIONS = {'1 час': 60, '2 часа': 120, 'Без таймера': 0}
@@ -201,8 +205,19 @@ class DailyPlanPanel(ttk.Frame):
         self._history_open = False
         self._seen_day = None
         self._date_after = None
+        self._game_after = None
+        self._rewards_open = False
+        self._hourly_open = False
+        self._compact_scene = False
+        self._shown_hourly_break = None
+        self.hourlypanel = None
+        self._family_notifications = True
         self.bind('<Destroy>', self._on_destroy, add='+')
 
+        # Reserve parent/child actions before expandable content. Otherwise a
+        # taller secondary view can consume the entire small-window cavity.
+        self._footer = ttk.Frame(self)
+        self._footer.pack(side='bottom', fill='x')
         self.heading = ttk.Label(self, text='План на сегодня', font=('Segoe UI', 24, 'bold'), foreground='#193653')
         self.heading.pack(anchor='w')
         self.status = ttk.Label(self, foreground='#385a72', font=('Segoe UI', 12))
@@ -216,36 +231,135 @@ class DailyPlanPanel(ttk.Frame):
         self.today_button = ttk.Button(history_row, text='Сегодня', command=self._show_today)
         self.pending_reviews_label = ttk.Label(history_row)
         self.pending_reviews_label.pack(side='right', padx=(8, 0))
+        self.game_status = ttk.Label(history_row, foreground='#385a72')
+        self.game_status.pack(side='left', padx=(8,0))
         self.progress = ttk.Progressbar(self, mode='determinate', length=200)
         self.progress.pack(anchor='w', pady=(0, 8))
         self._build_steve_scene()
-        self.task_list = TaskList(self)
+        self._body = ttk.Frame(self)
+        self._body.pack(fill='both', expand=True)
+        self.task_list = TaskList(self._body)
         self.task_list.pack(fill='both', expand=True)
         self.rows = self.task_list.content
-        self.feedback = ttk.Label(self, wraplength=640, justify='left', foreground='#385a72')
+        self.feedback = ttk.Label(self._footer, wraplength=640, justify='left', foreground='#385a72')
         self.feedback.pack(anchor='w', pady=(4, 8))
+        self.rewardspanel = RewardsPanel(self._body, lambda:self.plan,
+            book=RewardBook(self.store.root.parent / 'family-rewards'),
+            authorize_parent=lambda title:self._check_pin(), today=self.store.today)
 
-        actions = ttk.Frame(self)
+        actions = ttk.Frame(self._footer)
         actions.pack(fill='x', pady=(4, 6))
-        self.submit_button = ttk.Button(actions, text='Готово, проверьте', command=self._submit)
+        primary = ttk.Frame(actions)
+        primary.pack(fill='x')
+        navigation = ttk.Frame(actions)
+        navigation.pack(fill='x', pady=(5, 0))
+        self.submit_button = ttk.Button(primary, text='Готово, проверьте', command=self._submit)
         self.submit_button.pack(side='left')
-        ttk.Separator(actions, orient='vertical').pack(side='left', fill='y', padx=12)
-        self.edit_button = ttk.Button(actions, text='Добавить дела', command=self._edit)
-        self.edit_button.pack(side='left', padx=(0, 8))
-        self.approve_button = ttk.Button(actions, text='Подтвердить план', command=self._approve)
+        self.edit_button = ttk.Button(primary, text='Добавить дела', command=self._edit)
+        self.edit_button.pack(side='left', padx=8)
+        self.approve_button = ttk.Button(primary, text='Подтвердить план', command=self._approve)
         self.approve_button.pack(side='left')
-        self.guide_button = ttk.Button(actions, text='Обучалка с Крипером', command=self._open_guide)
+        self.goals_button = ttk.Button(navigation, text='Мои цели', command=self._toggle_rewards)
+        self.goals_button.pack(side='left')
+        if (self.study is not None and getattr(self.study,'supports_game_timer',False) is True
+                and callable(getattr(type(self.study),'hourly_cycle_control',None))):
+            self.hourlypanel = HourlyBreakPanel(self._body,self.study.hourly_cycle_control(),
+                authorize_parent=lambda title:self._check_pin())
+            self.hourly_button = ttk.Button(navigation,text='Час + дело',command=self._toggle_hourly)
+            self.hourly_button.pack(side='left',padx=(8,0))
+        self.guide_button = ttk.Button(navigation, text='Обучалка с Крипером', command=self._open_guide)
         self.guide_button.pack(side='right')
         self.play_button = ttk.Button(
-            actions, text='Открыть сборку Living Society', command=self._open_living_society,
+            navigation, text='Открыть сборку Living Society', command=self._open_living_society,
         )
         if self.study is not None:
             self._build_study_controls()
-        self.notice = ttk.Label(self, wraplength=640, justify='left')
+        self.notice = ttk.Label(self._footer, wraplength=640, justify='left')
         self.notice.pack(anchor='w', pady=(4, 0))
         self.bind('<Map>', lambda event: self.refresh() if event.widget is self else None)
+        self.bind('<Configure>', self._resize_board, add='+')
         self.refresh()
         self._date_after = self.after(DATE_POLL_MS, self._poll_date)
+        self._poll_game()
+
+    def _toggle_rewards(self):
+        if self._hourly_open:
+            self.hourlypanel.pack_forget()
+            self._hourly_open = False
+            self.hourly_button.configure(text='Час + дело')
+        self._rewards_open = not self._rewards_open
+        if self._rewards_open:
+            self.task_list.pack_forget()
+            self.rewardspanel.refresh()
+            self.rewardspanel.pack(fill='both', expand=True)
+            self.goals_button.configure(text='Назад к делам')
+        else:
+            self.rewardspanel.pack_forget()
+            self.task_list.pack(fill='both', expand=True)
+            self.goals_button.configure(text='Мои цели')
+        self._sync_scene_visibility()
+
+    def _toggle_hourly(self):
+        if self.hourlypanel is None:
+            return
+        if self._rewards_open:
+            self.rewardspanel.pack_forget()
+            self._rewards_open = False
+            self.goals_button.configure(text='Мои цели')
+        self._hourly_open = not self._hourly_open
+        if self._hourly_open:
+            self.task_list.pack_forget()
+            self.hourlypanel.refresh()
+            self.hourlypanel.pack(fill='both',expand=True)
+            self.hourly_button.configure(text='К делам')
+        else:
+            self.hourlypanel.pack_forget()
+            self.task_list.pack(fill='both',expand=True)
+            self.hourly_button.configure(text='Час + дело')
+        self._sync_scene_visibility()
+
+    def _sync_scene_visibility(self):
+        # Secondary views use the space of the decorative scene. Their own
+        # controls and the parent stop button remain reachable on short screens.
+        if self._hourly_open or self._rewards_open or self._compact_scene:
+            self._scene_row.pack_forget()
+        else:
+            self._scene_row.pack(before=self._body, fill='x', pady=(0, 10))
+
+    def _resize_board(self, event):
+        if event.widget is not self or self._closed:
+            return
+        compact = event.height < 560
+        if compact != self._compact_scene:
+            self._compact_scene = compact
+            self._sync_scene_visibility()
+
+    def _poll_game(self):
+        self._game_after = None
+        if self._closed:
+            return
+        try:
+            reader = getattr(self.study, 'board_play_status', None) if self.study is not None else None
+            view = reader() if callable(reader) else None
+            current = view.get('current') if view else None
+            if current and current['phase'] == 'playing':
+                seconds = current['remaining_seconds']
+                text = f'Игра: {seconds // 60:02d}:{seconds % 60:02d}'
+            elif current and current['phase'] in ('pending_release','return_requested'):
+                text = 'Проверяется игровой таймер'
+            else:
+                text = ''
+            self.game_status.configure(text=text)
+            hourly = self.__dict__.get('hourlypanel')
+            if hourly is not None:
+                state = hourly.service.status()
+                if (state['enabled'] and state['phase'] in ('waiting','submitted','approved')
+                        and state['break_id'] != self._shown_hourly_break and self._selected_date is None):
+                    self._shown_hourly_break = state['break_id']
+                    if not self._hourly_open:self._toggle_hourly()
+        except Exception:
+            self.game_status.configure(text='Таймер не подтверждён')
+        self._game_after = self.after(1000, self._poll_game)
 
     def _today_key(self):
         supplier = getattr(self.store, 'today', date.today)
@@ -269,6 +383,15 @@ class DailyPlanPanel(ttk.Frame):
         if event.widget is not self or self._closed:
             return
         self._closed = True
+        game_timer = self.__dict__.get('_game_after')
+        if game_timer is not None:
+            try:self.after_cancel(game_timer)
+            except tk.TclError:pass
+            self._game_after = None
+        rewards = self.__dict__.get('rewardspanel')
+        if rewards is not None:rewards.close()
+        hourly = self.__dict__.get('hourlypanel')
+        if hourly is not None:hourly.close()
         if self._date_after is not None:
             try:
                 self.after_cancel(self._date_after)
@@ -368,7 +491,7 @@ class DailyPlanPanel(ttk.Frame):
             self.notice.configure(text='')
 
     def _build_steve_scene(self):
-        scene_row = ttk.Frame(self)
+        scene_row = self._scene_row = ttk.Frame(self)
         scene_row.pack(fill='x', pady=(0, 10))
         self.scene = DailyPlanAnimation(scene_row)
         details = ttk.Frame(scene_row, padding=(12, 0, 0, 0))
@@ -447,7 +570,7 @@ class DailyPlanPanel(ttk.Frame):
         )
 
     def _build_study_controls(self):
-        controls = ttk.Frame(self)
+        controls = ttk.Frame(self._footer)
         controls.pack(fill='x', pady=(8, 6))
         ttk.Label(controls, text='Уроки').pack(side='left', padx=(0, 8))
         self.study_duration = ttk.Combobox(
@@ -532,13 +655,16 @@ class DailyPlanPanel(ttk.Frame):
         self.status.configure(text=summary)
         feedback = plan['feedback'] if plan else ''
         if plan:
-            minutes = f"Игровое время по договорённости — {plan['game_minutes']} мин."
+            minutes = f"Награда после проверки родителем — до {plan['game_minutes']} минут игры."
             feedback = f'{feedback}\n{minutes}' if feedback else minutes
         self.feedback.configure(text=feedback)
         self.submit_button.configure(state='normal' if phase == 'open' and done == len(tasks) else 'disabled')
         self.edit_button.configure(text='Изменить дела' if plan else 'Добавить дела',
                                    state='disabled' if unavailable or self._selected_date is not None or phase in ('submitted', 'approved') else 'normal')
-        self.approve_button.configure(state='normal' if phase == 'submitted' else 'disabled')
+        retry_grant = (phase == 'approved' and plan is not None and plan.get('approval') is not None
+                       and self._selected_date is None and plan['date'] == self._today_key())
+        self.approve_button.configure(state='normal' if phase == 'submitted' or retry_grant else 'disabled',
+                                      text='Проверить выдачу игры' if retry_grant else 'Подтвердить план')
         self._update_game_access()
         for index, task in enumerate(tasks):
             self._render_task(index, task, plan['revision'], phase)
@@ -628,7 +754,15 @@ class DailyPlanPanel(ttk.Frame):
             session_id = self.study.active_study_id() if self.study is not None and not scope else None
             return self.store.submit(expected_revision=revision, study_session_id=session_id, **scope)
 
-        self._commit(submit, 'Родитель может проверить список на этом компьютере.')
+        saved = self._commit(submit, 'Родитель может проверить список на этом компьютере.')
+        if saved and not scope and self.__dict__.get('_family_notifications', False):
+            try:
+                from family_bridge import FamilyBridge
+                request_id = 'board-ready-' + str(self.plan['revision'])
+                FamilyBridge().send_message('План выполнен и ждёт проверки. Напиши /plan, чтобы посмотреть дела и одобрить игру.', request_id)
+                self.notice.configure(text='План сохранён; уведомление поставлено в семейную очередь. Доставка ещё не подтверждена.')
+            except Exception:
+                self.notice.configure(text='План сохранён. Telegram недоступен; родитель может проверить список на компьютере.')
 
     def _check_pin(self, *, allow_setup=False):
         if self._closed:
@@ -698,6 +832,42 @@ class DailyPlanPanel(ttk.Frame):
         if not self._visible_matches(plan, selected_date):
             if not self._closed:
                 self.notice.configure(text='Доска изменилась. Проверьте выбранный день ещё раз.')
+            return
+        approver = (self.study.approve_board_plan if self.study is not None and
+                    getattr(self.study, 'supports_game_timer', False) is True and
+                    callable(getattr(type(self.study), 'approve_board_plan', None)) else None)
+        if callable(approver):
+            percent, comment = 100, ''
+            try:
+                if not plan.get('approval'):
+                    agreement = BoardApproval(plans=self.store, rewards=self.rewardspanel.book).agreement(plan)
+                    if agreement is not None:
+                        percent = simpledialog.askinteger('Проверка по договорённости',
+                            agreement['tasks'][0]['criteria']+'\n\nКачество выполнения, от 0 до 100%.',
+                            minvalue=0,maxvalue=100,initialvalue=100,parent=self.winfo_toplevel())
+                        if percent is None:return
+                        if percent < 100:
+                            comment = simpledialog.askstring('Что можно улучшить?',
+                                'Коротко объясните ребёнку, что можно улучшить.',parent=self.winfo_toplevel())
+                            if not comment or not comment.strip():return
+                if not self._visible_matches(plan, selected_date):return
+                result = approver(self.store, plan, quality_percent=percent, comment=comment.strip())
+                self.refresh()
+                current = result.get('play',{}).get('current')
+                if current and current['phase']=='playing':
+                    notice = f'План подтверждён. Режим уроков завершён. Игровое время — {result["game_minutes"]} минут.'
+                elif result.get('meaning','').startswith('newer_study_preserved'):
+                    notice = 'План подтверждён. Действующий сеанс «Уроки» продолжается; новое игровое время не выдано.'
+                elif result.get('status')=='approved_without_play':
+                    notice = 'План подтверждён. Игровое время не выдано; текущие ограничения сохранены.'
+                else:
+                    notice = 'План подтверждён. Проверьте статус таймера: игровой час повторно не начисляется.'
+                self.notice.configure(text=notice)
+                rewards = self.__dict__.get('rewardspanel')
+                if rewards is not None:rewards.refresh()
+            except Exception as error:
+                self.refresh()
+                self.notice.configure(text='Подтверждение или запуск таймера не завершены. Проверьте контроллер и при необходимости «Завершить уроки»: '+str(error)[:180])
             return
         saved = self._commit(
             partial(self.store.review, approved=True, feedback='', expected_revision=plan['revision'], **scope),

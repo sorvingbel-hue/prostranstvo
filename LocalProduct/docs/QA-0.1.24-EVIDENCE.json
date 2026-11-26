@@ -1,0 +1,52 @@
+{
+  "candidate": "0.1.24",
+  "verification_date": "2026-11-26",
+  "source_zip_sha256": "56d03a14c4a1ad7bcd33d070544fcd63c406bae6e25f9cc4f1404a915c509f95",
+  "source_snapshot_files": 274,
+  "windows_source_suite": {
+    "run": 1737,
+    "passed": 1731,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 6,
+    "seconds": 200.183,
+    "python": "3.13.18",
+    "desktop": "owned non-input Windows QA desktop",
+    "input_injected": false,
+    "desktop_switched": false
+  },
+  "native_study_fixture_tests": {
+    "passed": 3,
+    "overlap_with_suite_skips": true,
+    "real_games_or_household_acceptance": false
+  },
+  "installed_legacy_tests": {
+    "run": 38,
+    "passed": 37,
+    "skipped": 1,
+    "actual_uninstaller_run": false
+  },
+  "package_manifest_files_verified": 1092,
+  "installer": {
+    "real_cli_install_and_upgrade": true,
+    "disposable_localappdata": true,
+    "files_verified_per_install": 1092,
+    "upgrade_backup_files_verified": 1092,
+    "data_sentinel_preserved": true,
+    "gui_shortcuts_uninstall_or_signin_verified": false
+  },
+  "open_gates": [
+    "loaded family runtime and fresh contract2 heartbeat",
+    "real Roblox/Minecraft and family interaction",
+    "actual 60/10 cycle and parent-only release",
+    "sleep/sign-in/reboot recovery",
+    "clean Windows install/update/uninstall",
+    "optional Telegram/voice/microphone/API/login",
+    "remaining independent security and redistribution-license acceptance"
+  ],
+  "limits": [
+    "A desktop fixture is not a VM or account isolation.",
+    "A PIN on a shared account does not isolate code running under that account.",
+    "No private state, browser profiles, inventories, logs, installers or runtime binaries are published."
+  ]
+}

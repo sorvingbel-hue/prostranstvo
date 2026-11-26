@@ -239,6 +239,12 @@ def _protected(item):
         return "Minecraft, миры, моды и связанные инструменты сохраняются."
     identity_text = unicodedata.normalize(
         "NFKC", item["name"] + " " + item["publisher"]).casefold()
+    roblox = r"roblox(?:\s*(?:player|studio)(?:\s*(?:beta|launcher))?)?"
+    install_parts = re.split(r"[\\/]+", unicodedata.normalize(
+        "NFKC", item["install_path"]).casefold())
+    if (re.search(r"(?<!\w)" + roblox + r"(?!\w)", identity_text) or
+            any(re.fullmatch(roblox, part) for part in install_parts)):
+        return "Roblox Player, Studio и связанные папки установки сохраняются."
     if (any(token in identity_text for token in ("prostranstvo", "пространство", "codex")) or
             _self_install_path(item["install_path"])):
         return "Приложение и инструменты агента сохраняются."

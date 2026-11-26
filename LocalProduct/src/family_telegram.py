@@ -532,7 +532,7 @@ class TelegramSettings:
             return {"id": message["id"], "status": "sent", "meaning": "accepted_by_telegram",
                     "notification": "requested", "telegram_message_id": result["message_id"]}
 
-    def poll_incoming(self, store):
+    def poll_incoming(self, store, command_handler=None):
         with self._lock:
             data = self._load()
             if not self._active(data, store):
@@ -549,12 +549,31 @@ class TelegramSettings:
                         and message["from"]["id"] == data["paired"]["user_id"]
                         and _plain_text(message["text"])
                         and not message["text"].lstrip().startswith("/start")):
-                    try:
-                        record = store.add_incoming(message["text"], update["update_id"], message["message_id"])
-                    except Exception:
-                        raise TelegramError("incoming_write_failed") from None
-                    if record.get("status") == "received":
-                        accepted.append(record)
+                    reserved = re.match(r"^/(?:plan|approve)(?=$|[\s@])", message["text"].lstrip(), re.IGNORECASE)
+                    if reserved:
+                        # Only the authenticated pinned private sender reaches this
+                        # durable enqueue. No coordinator/Study work runs here.
+                        if command_handler is None:
+                            raise TelegramError("board_handler_unavailable")
+                        identity = hashlib.sha256(json.dumps(data["pinned"], sort_keys=True,
+                            separators=(",", ":")).encode()).hexdigest()
+                        try:
+                            result = command_handler.accept_message(
+                                text=message["text"], update_id=update["update_id"],
+                                message_id=message["message_id"], binding_id=identity,
+                                forwarded=any(key in message for key in (
+                                    "forward_origin", "forward_from", "forward_from_chat", "forward_date", "via_bot")))
+                            if not isinstance(result, dict) or result.get("handled") is not True:
+                                raise ValueError("invalid_board_command_receipt")
+                        except Exception:
+                            raise TelegramError("board_command_write_failed") from None
+                    else:
+                        try:
+                            record = store.add_incoming(message["text"], update["update_id"], message["message_id"])
+                        except Exception:
+                            raise TelegramError("incoming_write_failed") from None
+                        if record.get("status") == "received":
+                            accepted.append(record)
                 # Advance only after the intended message was durably stored.
                 try:
                     store.advance_update_offset(update["update_id"] + 1)

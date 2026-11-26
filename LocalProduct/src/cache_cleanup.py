@@ -6,6 +6,7 @@ The scope/deleter injection points are for owned test fixtures, not MCP options.
 """
 from __future__ import annotations
 import contextlib
+from copy import deepcopy
 import ctypes
 from ctypes import wintypes
 import datetime as dt
@@ -36,6 +37,7 @@ STAMP = ('size','mtime_ns','ctime_ns','ino','dev','file_id','volume_serial','att
 ENTRY_KEYS = {'scope_id','path',*STAMP}
 PLAN_KEYS = {'version','kind','plan_id','created_utc','expires_utc','min_age_days','scopes',
              'entries','totals','skipped','errors','skipped_count','error_count','partial','plan_hash'}
+ANALYSIS_KEYS = {'partial','skipped_count','error_count','skipped','errors'}
 
 class CleanupError(ValueError):
     pass
@@ -406,6 +408,7 @@ class CacheCleanup:
             raise CleanupError('invalid_plan_summary')
         for field in ('skipped','errors'):
             if (not isinstance(plan[field],list) or len(plan[field])>MAX_SAMPLES
+                    or len(plan[field])>plan['skipped_count' if field=='skipped' else 'error_count']
                     or any(not isinstance(v,dict) or set(v)!={'path','reason'} or not all(isinstance(x,str) for x in v.values()) for v in plan[field])):
                 raise CleanupError('invalid_plan_samples')
         return plan
@@ -420,11 +423,42 @@ class CacheCleanup:
         return result
 
     @staticmethod
-    def _result(receipt,path):
+    def _analysis(plan):
+        """Copy the immutable analysis from the validated, approved plan."""
+        return {key:deepcopy(plan[key]) for key in ANALYSIS_KEYS}
+
+    @classmethod
+    def _checked_analysis(cls,receipt,plan):
+        expected=cls._analysis(plan)
+        if 'analysis' not in receipt:
+            # Old receipts inherit the approved plan's analysis in the returned
+            # view only; a completed receipt is never rewritten to migrate it.
+            return expected
+        saved=receipt['analysis']
+        if (not isinstance(saved,dict) or set(saved)!=ANALYSIS_KEYS
+                or type(saved['partial']) is not bool
+                or any(type(saved[key]) is not int or saved[key]<0 for key in ('skipped_count','error_count'))):
+            raise CleanupError('invalid_receipt_analysis')
+        for field,count in (('skipped','skipped_count'),('errors','error_count')):
+            if (not isinstance(saved[field],list) or len(saved[field])>MAX_SAMPLES
+                    or len(saved[field])>saved[count]
+                    or any(not isinstance(row,dict) or set(row)!={'path','reason'}
+                           or not all(isinstance(value,str) for value in row.values()) for row in saved[field])):
+                raise CleanupError('invalid_receipt_analysis')
+        if saved!=expected:
+            raise CleanupError('receipt_analysis_does_not_match_plan')
+        return expected
+
+    @classmethod
+    def _result(cls,receipt,path,plan):
+        analysis=cls._checked_analysis(receipt,plan)
         deleted=[e for e in receipt['entries'] if e['state']=='deleted']
         skipped=[{'path':e['path'],'reason':e.get('reason','skipped')} for e in receipt['entries'] if e['state']=='skipped']
         errors=[{'path':e['path'],'reason':e.get('reason',e['state'])} for e in receipt['entries'] if e['state'] in ('error','uncertain','delete_pending')]
-        return dict(status=receipt['status'],deleted_files=len(deleted),deleted_bytes=sum(e['size'] for e in deleted),
+        status=receipt['status']
+        if status=='completed' and (analysis['partial'] or analysis['error_count']):
+            status='completed_with_skips'
+        return dict(status=status,analysis=analysis,deleted_files=len(deleted),deleted_bytes=sum(e['size'] for e in deleted),
                     skipped=skipped,errors=errors,before_free=receipt['before_free'],after_free=receipt['after_free'],
                     receipt_path=str(path))
 
@@ -441,6 +475,7 @@ class CacheCleanup:
                 if (receipt.get('plan_hash')!=original['plan_hash'] or len(receipt['entries'])!=len(original['entries'])
                         or receipt.get('status') not in ('running','uncertain','completed','completed_with_skips')):
                     raise CleanupError('invalid_receipt')
+                self._checked_analysis(receipt,original)
                 for row,entry in zip(receipt['entries'],original['entries']):
                     if (not isinstance(row,dict) or not {'path','size','file_id','volume_serial','state'}<=set(row)<={'path','size','file_id','volume_serial','state','reason'}
                             or any(row[k]!=entry[k] for k in ('path','size','file_id','volume_serial'))
@@ -450,11 +485,12 @@ class CacheCleanup:
                     for entry in receipt['entries']:
                         if entry['state']=='in_flight':entry.update(state='uncertain',reason='previous_execution_interrupted')
                     receipt['status']='uncertain';self._write(receipt_path,receipt)
-                return self._result(receipt,receipt_path)
+                return self._result(receipt,receipt_path,original)
             plan=self._plan(plan_id)
             receipt=dict(version=1,plan_id=plan_id,plan_hash=plan['plan_hash'],status='running',created_utc=_utc(self.clock()),
                          entries=[dict(path=e['path'],size=e['size'],file_id=e['file_id'],volume_serial=e['volume_serial'],state='not_started') for e in plan['entries']],
-                         before_free=self._free(plan),after_free={})
+                         before_free=self._free(plan),after_free={},analysis=self._analysis(plan))
+            self._checked_analysis(receipt,plan)
             self._write(receipt_path,receipt,new=True)
             for index,entry in enumerate(plan['entries']):
                 row=receipt['entries'][index]
@@ -474,7 +510,7 @@ class CacheCleanup:
                     except Exception:
                         row.update(state='uncertain',reason='receipt_commit_failed_after_action')
                         receipt['status']='uncertain';receipt['after_free']=self._free(plan)
-                        return self._result(receipt,receipt_path)
+                        return self._result(receipt,receipt_path,plan)
                 except FileNotFoundError:
                     row.update(state='skipped',reason='missing');self._write(receipt_path,receipt)
                 except CleanupError as error:
@@ -484,11 +520,11 @@ class CacheCleanup:
                         row.update(state='uncertain',reason='receipt_or_post_action_error')
                         receipt['status']='uncertain'
                         receipt['after_free']=self._free(plan)
-                        return self._result(receipt,receipt_path)
+                        return self._result(receipt,receipt_path,plan)
                     row.update(state='skipped',reason='busy_or_access_denied');self._write(receipt_path,receipt)
             states={e['state'] for e in receipt['entries']}
-            receipt['status']='uncertain' if states&{'uncertain','in_flight','delete_pending'} else 'completed_with_skips' if 'skipped' in states else 'completed'
+            receipt['status']='uncertain' if states&{'uncertain','in_flight','delete_pending'} else 'completed_with_skips' if ('skipped' in states or plan['partial'] or plan['error_count']) else 'completed'
             receipt['after_free']=self._free(plan);receipt['finished_utc']=_utc(self.clock())
             self._write(receipt_path,receipt)
-            return self._result(receipt,receipt_path)
+            return self._result(receipt,receipt_path,plan)
 

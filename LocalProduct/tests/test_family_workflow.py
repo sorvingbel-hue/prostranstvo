@@ -161,6 +161,7 @@ class FamilyWorkflowTests(unittest.TestCase):
             session=StudySession(_EmptyDesktop(), clock=lambda: self.clock.monotonic),
             guard=StudyGuard(self.study_root, clock=lambda: self.clock.wall),
             resume=self._resume(),
+            ensure_play_running=lambda resume:None,
         )
         self.addCleanup(controller.close)
         return controller
@@ -217,7 +218,9 @@ class FamilyWorkflowTests(unittest.TestCase):
         self.assertIsNone(self._resume().read())
         self.assertFalse(self.study.session.active)
         self.assertEqual(self.plan.play_button.winfo_manager(), 'pack')
-        self.startup.assert_called_once()
+        self.startup.assert_called()
+        self.assertEqual(self.study.board_play_status()['current']['phase'], 'playing')
+        self.assertEqual(self.study.board_play_status()['current']['duration_seconds'], 45 * 60)
 
     def test_unreviewed_work_and_bad_pin_cannot_end_study_or_grant_game_access(self):
         lease = self._start()
@@ -391,7 +394,8 @@ class FamilyWorkflowTests(unittest.TestCase):
         self.assertIsNone(self._resume().read())
         self.assertFalse(self.study.session.active)
         self.assertEqual(self.plan.play_button.winfo_manager(), 'pack')
-        self.assertEqual(self.startup.call_count, 2)
+        self.startup.assert_called()
+        self.assertEqual(self.study.board_play_status()['current']['phase'], 'playing')
 
     def test_reopened_guard_after_rollover_requires_pin_for_review_and_stop(self):
         initial = self.store.read()

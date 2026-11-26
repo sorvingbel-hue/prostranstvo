@@ -71,6 +71,23 @@ def _count(value):
     return None
 
 
+def _receipt_analysis(receipt):
+    """Validate the separate analysis summary before displaying success."""
+    if 'analysis' not in receipt:
+        return None  # Older injected adapters do not establish completeness.
+    value=receipt['analysis']
+    if (not isinstance(value,dict) or set(value)!={'partial','skipped_count','error_count','skipped','errors'}
+            or type(value['partial']) is not bool
+            or any(type(value[key]) is not int or value[key]<0 for key in ('skipped_count','error_count'))):
+        raise ValueError('Invalid analysis summary')
+    for field,count in (('skipped','skipped_count'),('errors','error_count')):
+        if (not isinstance(value[field],list) or len(value[field])>min(value[count],200)
+                or any(not isinstance(row,dict) or set(row)!={'path','reason'}
+                       or not all(isinstance(item,str) for item in row.values()) for row in value[field])):
+            raise ValueError('Invalid analysis samples')
+    return deepcopy(value)
+
+
 class CacheCleanupPanel(ttk.Frame):
     def __init__(self, parent, cleaner=None, parent_guard=None):
         super().__init__(parent, padding=16)
@@ -237,15 +254,32 @@ class CacheCleanupPanel(ttk.Frame):
         if deleted is None or type(size) is not int or size < 0 or skipped is None or errors is None:
             self.notice.set('Получен неполный результат. Проверьте журнал очистки перед новым запуском.')
             return
+        try:
+            analysis=_receipt_analysis(receipt)
+        except ValueError:
+            self.notice.set('Сводка анализа не прошла проверку. Результат очистки не подтверждён; проверьте журнал.')
+            return
         status = str(receipt.get('status', 'unknown'))
-        self.notice.set(f'Результат {status}. Удалено {deleted} файлов ({format_bytes(size)} логического объёма). Пропущено {skipped}, ошибок {errors}.')
-        lines = [self.notice.get()]
+        if analysis is None:
+            analysis_text='Полнота анализа не подтверждена.'
+            if status=='completed':status='unverified'
+        else:
+            partial=analysis['partial'] or analysis['error_count']>0
+            if partial and status=='completed':status='completed_with_skips'
+            analysis_text=('Анализ частичный.' if partial else 'Анализ завершён.')
+            analysis_text+=f' При анализе пропущено {analysis["skipped_count"]}, ошибок {analysis["error_count"]}.'
+        execution_text=f'Пропущено {skipped}, ошибок {errors} при исполнении.'
+        self.notice.set(f'Результат {status}. Удалено {deleted} файлов ({format_bytes(size)} логического объёма). {execution_text} {analysis_text}')
+        lines = [self.notice.get(), 'Анализ\n'+analysis_text, 'Исполнение\n'+execution_text]
+        if analysis is not None:
+            if analysis['errors']:lines.append('Ошибки анализа\n'+str(analysis['errors']))
+            if analysis['skipped']:lines.append('Пропуски анализа\n'+str(analysis['skipped']))
         for key, title in (('before_free', 'Свободное место до'), ('after_free', 'Свободное место после'),
                            ('receipt_path', 'Журнал')):
             if key in receipt:
                 lines.append(title + ': ' + str(receipt[key]))
         if receipt.get('errors'):
-            lines.extend(['Ошибки', str(receipt['errors'])])
+            lines.extend(['Ошибки исполнения', str(receipt['errors'])])
         self._text('\n\n'.join(lines))
 
     def _poll(self):

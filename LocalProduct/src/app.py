@@ -21,6 +21,7 @@ from security_ui import SecurityPanel
 from storage_ui import StoragePanel
 from cache_cleanup_ui import CacheCleanupPanel
 from application_removal_ui import ApplicationRemovalPanel
+from desktop_control_ui import DesktopControlPanel
 LABELS={'queued':'В очереди','needs_approval':'Нужна проверка плана','running':'Выполняется','completed':'Готово','failed':'Ошибка','cancelled':'Отменено','interrupted':'Прервано'}
 class App(tk.Tk):
  def __init__(self):
@@ -86,6 +87,7 @@ class App(tk.Tk):
    'Общий каталог необязателен: чужие индексы и личные данные в пакет не включаются. '
    'Без каталога доступны обследование папок, поиск дублей и проверяемые планы переноса.')
   self._build_browser_login_panel()
+  self._build_desktop_control_panel()
   ttk.Label(self.settingstab,text=connectionText,wraplength=900,justify='left').pack(anchor='w')
   ttk.Button(self.settingstab,text='Открыть папку программы',command=lambda:os.startfile(str(APP_ROOT))).pack(anchor='w',pady=16)
   ttk.Button(self.settingstab,text='Открыть локальные данные',command=lambda:os.startfile(str(DATA_ROOT))).pack(anchor='w')
@@ -122,7 +124,14 @@ class App(tk.Tk):
  def _build_browser_login_panel(self):
   self.browserloginpanel=BrowserLoginPanel(self.settingstab,authorize_parent=self.studypanel.authorize_parent)
   self.browserloginpanel.pack(fill='x',pady=(0,12))
+ def _build_desktop_control_panel(self):
+  self.desktopcontroltab=ttk.Frame(self.tabs)
+  self.tabs.add(self.desktopcontroltab,text='Доступ ИИ')
+  self.desktopcontrolpanel=DesktopControlPanel(self.desktopcontroltab,authorize_parent=self.studypanel.authorize_parent)
+  self.desktopcontrolpanel.pack(fill='both',expand=True)
  def destroy(self):
+  desktoppanel=self.__dict__.get('desktopcontrolpanel')
+  if desktoppanel is not None:desktoppanel.close()
   for panelname in ('securitypanel','storagepanel','removalpanel'):
    panel=self.__dict__.get(panelname)
    if panel is not None:panel.close()

@@ -81,7 +81,7 @@ def _check_date(value):
 
 def _validate(plan):
     required = {'date', 'revision', 'status', 'game_minutes', 'feedback', 'tasks'}
-    if not isinstance(plan, dict) or not required <= plan.keys() <= required | {'study_session_id'}:
+    if not isinstance(plan, dict) or not required <= plan.keys() <= required | {'study_session_id', 'contract_revision', 'approval'}:
         raise DailyPlanError('Повреждён файл плана.')
     _check_date(plan['date'])
     revision = plan['revision']
@@ -89,6 +89,19 @@ def _validate(plan):
         raise DailyPlanError('Повреждена версия плана.')
     if plan['status'] not in PLAN_STATES:
         raise DailyPlanError('Повреждён статус плана.')
+    if 'contract_revision' in plan and (type(plan['contract_revision']) is not int or not 0 < plan['contract_revision'] < 2**128):
+        raise DailyPlanError('Повреждён договор наград.')
+    if 'approval' in plan:
+        approval = plan['approval']
+        if (plan['status'] != 'approved' or not isinstance(approval, dict)
+                or set(approval) != {'request_id', 'submitted_revision', 'quality_percent'}
+                or not isinstance(approval['request_id'], str)
+                or not re.fullmatch(r'[0-9a-f]{32}', approval['request_id'])
+                or type(approval['submitted_revision']) is not int
+                or not 0 < approval['submitted_revision'] < 2**128
+                or type(approval['quality_percent']) is not int
+                or not 0 <= approval['quality_percent'] <= 100):
+            raise DailyPlanError('Повреждено подтверждение родителя.')
     if 'study_session_id' in plan:
         session_id = plan['study_session_id']
         if (plan['status'] == 'open' or not isinstance(session_id, str)
@@ -277,12 +290,13 @@ class DailyPlan:
         plan = self._selected_plan(state, day, plan_date)
         total_points = state['past_points']
         checked_points = _earned_points(plan)
-        approved_points = checked_points if plan is not None and plan['status'] == 'approved' else 0
+        approved_points = (checked_points * plan.get('approval', {}).get('quality_percent', 100) // 100
+                           if plan is not None and plan['status'] == 'approved' else 0)
         plans = state['history'] + ([state['plan']] if state['plan'] is not None else [])
         current_tier, next_tier = equipment_for_points(total_points)
         return plan, {
             'today_points': checked_points,
-            'provisional_points': checked_points - approved_points,
+            'provisional_points': 0 if plan is not None and plan['status'] == 'approved' else checked_points,
             'approved_today_points': approved_points,
             'planned_points': DAILY_POINTS_CAP if plan is not None else 0,
             'total_points': total_points,
@@ -333,6 +347,8 @@ class DailyPlan:
                 self._archive_current(state)
                 current = {'date': day}
                 state['plan'] = current
+            if 'revision' in current:
+                current.setdefault('contract_revision', current['revision'])
             yield current, state
             current['revision'] = uuid.uuid4().int
 
@@ -360,6 +376,7 @@ class DailyPlan:
                 template = state['repeat_template']
                 current = {
                     'date': day, 'revision': uuid.uuid4().int, 'status': 'open',
+                    'contract_revision': uuid.uuid4().int,
                     'game_minutes': template['game_minutes'], 'feedback': '',
                     'tasks': [{**task, 'status': 'pending'} for task in template['tasks']],
                 }
@@ -410,7 +427,8 @@ class DailyPlan:
         with self._change(expected_revision) as (plan, state):
             if plan.get('status') in ('submitted', 'approved'):
                 raise DailyPlanError('Изменить можно только открытый план.')
-            plan.update(status='open', game_minutes=game_minutes, feedback='', tasks=items)
+            plan.update(status='open', game_minutes=game_minutes, feedback='', tasks=items,
+                        contract_revision=uuid.uuid4().int)
             if repeat_daily is False:
                 state['repeat_template'] = None
             elif repeat_daily is True or state['repeat_template'] is not None:
@@ -464,10 +482,27 @@ class DailyPlan:
                 plan['study_session_id'] = study_session_id
         return plan
 
-    def review(self, *, approved, feedback, expected_revision, task_index=None, plan_date=None):
+    def review(self, *, approved, feedback, expected_revision, task_index=None, plan_date=None,
+               approval_id=None, quality_percent=100):
         if type(approved) is not bool or (approved and task_index is not None):
             raise DailyPlanError('Неверное решение по плану.')
+        if ((expected_revision is not None and (type(expected_revision) is not int
+                or not 0 < expected_revision < 2**128))
+                or (approval_id is not None and expected_revision is None)):
+            raise DailyPlanError('Неверная версия подтверждения.')
+        if (type(quality_percent) is not int or not 0 <= quality_percent <= 100
+                or (quality_percent != 100 and approval_id is None)
+                or (approval_id is not None and (not approved or not isinstance(approval_id, str)
+                    or not re.fullmatch(r'[0-9a-f]{32}', approval_id)))):
+            raise DailyPlanError('Неверное подтверждение родителя.')
         feedback = _clean_text(feedback, MAX_FEEDBACK_LENGTH, allow_empty=approved)
+        if approval_id is not None:
+            existing = self.read(plan_date=plan_date)
+            if existing is not None and existing['status'] == 'approved':
+                if existing.get('feedback') == feedback and existing.get('approval') == {'request_id': approval_id,
+                        'submitted_revision': expected_revision, 'quality_percent': quality_percent}:
+                    return existing
+                raise DailyPlanConflict('Этот план уже подтверждён другим решением.')
         with self._change(expected_revision, plan_date) as (plan, state):
             if plan.get('status') != 'submitted':
                 raise DailyPlanError('План должен быть отправлен на проверку.')
@@ -475,6 +510,9 @@ class DailyPlan:
                 self._task(plan, task_index)['status'] = 'pending'
                 plan.pop('study_session_id', None)
             else:
-                state['past_points'] += _earned_points(plan)
+                state['past_points'] += _earned_points(plan) * quality_percent // 100
+                if approval_id is not None:
+                    plan['approval'] = {'request_id': approval_id, 'submitted_revision': expected_revision,
+                                        'quality_percent': quality_percent}
             plan.update(status='approved' if approved else 'open', feedback=feedback)
         return plan

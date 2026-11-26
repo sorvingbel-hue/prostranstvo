@@ -200,6 +200,36 @@ class ApplicationRemovalTests(unittest.TestCase):
         self.rows[0]["install_path"] = str(self.owned / "worlds")
         self.assertEqual(self.manager.catalog()["items"][0]["status"], "protected")
 
+    def test_roblox_player_studio_and_publisher_are_protected(self):
+        for name in ("Roblox", "Roblox Player for fixture", "Roblox Studio for fixture",
+                     "RobloxPlayerBeta", "RobloxStudioLauncher", "Ｒｏｂｌｏｘ Studio"):
+            self.rows[0] = dict(self.generic(), name=name)
+            with self.subTest(name=name):
+                self.assertEqual(self.manager.catalog()["items"][0]["status"], "protected")
+                with self.assertRaises(ar.RemovalError):
+                    self.prepare()
+        self.rows[0] = dict(self.generic(), publisher="Roblox Corporation")
+        self.assertEqual(self.manager.catalog()["items"][0]["status"], "protected")
+        self.assertFalse(self.calls)
+
+    def test_roblox_install_roots_protect_unusual_registry_identity(self):
+        for relative in ("Roblox", "Roblox/Versions/version-fixture", "RobloxPlayer",
+                         "Roblox Studio/Versions/version-fixture"):
+            self.rows[0] = dict(self.generic(), install_path=str(self.owned / relative))
+            with self.subTest(relative=relative):
+                self.assertEqual(self.manager.catalog()["items"][0]["status"], "protected")
+                with self.assertRaises(ar.RemovalError):
+                    self.prepare()
+        self.assertFalse(self.calls)
+
+    def test_roblox_protection_does_not_match_unrelated_names_or_path_substrings(self):
+        for name in ("Rob's Garden", "Robot Arena", "NotRoblox", "Robloxish Garden"):
+            self.rows[0] = dict(self.steam(), name=name,
+                                install_path=str(self.owned / "Robloxish" / "Garden"))
+            with self.subTest(name=name):
+                self.assertEqual(self.manager.catalog()["items"][0]["status"], "available")
+        self.assertFalse(self.calls)
+
     def test_generic_codex_ancestor_is_not_an_agent_installation(self):
         install = self.owned / "Codex" / "Applications" / "FixtureGarden"
         install.mkdir(parents=True)
